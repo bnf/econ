@@ -187,8 +187,13 @@ typedef struct {
 	uint16_t height;
 } e_command_cmd22;
 
+typedef struct {
+	uint32_t unknown_field1;
+	uint32_t unknown_field2;
+} e_command_cmd25;
 
-struct econ_header{
+
+struct econ_header {
 	char magicnum[ECON_MAGICNUM_SIZE];		
 	char version[ECON_PROTOVER_MAXLEN];		
 	uint8_t IPaddress[ECON_IPADDRESS_SIZE];		
@@ -196,7 +201,7 @@ struct econ_header{
 	uint32_t datasize;							
 };
 
-struct econ_command{
+struct econ_command {
 	uint8_t recordCount;				
 	uint8_t implicit_padding[3];
 	union e_commands {
@@ -208,6 +213,7 @@ struct econ_command{
 		e_command_sendkey sendkey;        
 
 		e_command_cmd22 cmd22;
+		e_command_cmd25 cmd25;
 	} command;
 };
 
