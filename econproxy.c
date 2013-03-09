@@ -219,6 +219,69 @@ create_data_sockets(struct ep *ep, const char *beamer)
 }
 
 static int
+ep_read_ack(struct ep *ep)
+{
+	size_t len;
+
+	init_iov(ep);
+
+	len = readv(ep->ec_fd, ep->iov, 2);
+	if (len < ep->iov[0].iov_len + ep->iov[1].iov_len) {
+		fprintf(stderr, "error: command received is to short\n");
+		return -1;
+	}
+
+	switch (ep->ehdr.commandID) {
+	/* cack for connection video sockets */
+	case E_CMD_22:
+		break;
+	case E_CMD_DISCONCLIENT:
+		fprintf(stderr,
+			"connection failed: probably incorrect version?\n");
+		return -1;
+	default:
+		fprintf(stderr,
+			"unexpected command: %d while waiting for socket ack.\n",
+			ep->ehdr.commandID);
+		return -1;
+	}
+
+	init_iov(ep);
+	init_header(&ep->ehdr, E_CMD_REQCONNECT);
+
+	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	ep->ehdr.datasize = sizeof ep->ecmd;
+
+	memset(&ep->ecmd, 0, sizeof ep->ecmd);
+
+	ep->ehdr.commandID = 25;
+	ep->ecmd.command.cmd25.unknown_field1 = 1;
+	ep->ecmd.command.cmd25.unknown_field2 = 1;
+
+	writev(ep->ec_fd, ep->iov, 1);
+
+	return 0;
+}
+
+static int
+ep_send_frame(struct ep *ep, char *buf, int size)
+{
+	struct econ_header hdr;
+	memset(&hdr, 0, sizeof hdr);
+
+	strncpy(hdr.magicnum, "EPRD", ECON_MAGICNUM_SIZE);
+	strncpy(hdr.version,  "0600", ECON_PROTOVER_MAXLEN);
+
+	hdr.commandID = 0;
+	hdr.datasize = size;
+
+	write(ep->video_fd, (void *) &hdr, sizeof hdr);
+	write(ep->video_fd, buf, size);
+
+	return 0;
+}
+
+static int
 create_beamer_sockets(struct ep *ep, const char *beamer)
 {
 	char myhostname[HOST_NAME_MAX+1];
@@ -410,6 +473,14 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 
 	if (create_data_sockets(&ep, beamer) < 0)
+		exit(EXIT_FAILURE);
+
+	ep_keepalive(&ep);
+
+	if (ep_read_ack(&ep) < 0)
+		exit(EXIT_FAILURE);
+
+	if (ep_send_frame(&ep, buf, bufsiz) < 0)
 		exit(EXIT_FAILURE);
 
 	while (1) {
