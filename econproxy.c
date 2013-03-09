@@ -12,7 +12,9 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#if 0
 #include <limits.h>
+#endif
 
 #include "econproto.h"
 #include "util.h"
@@ -151,7 +153,6 @@ vnes_ntoh(rfbServerInitMsg *vnes1, rfbServerInitMsg *vnes2)
 	vnes2->nameLength           = ntohl(vnes1->nameLength);
 }
 
-
 static int
 ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
 {
@@ -241,7 +242,7 @@ ep_read_ack(struct ep *ep)
 		return -1;
 	default:
 		fprintf(stderr,
-			"unexpected command: %d while waiting for socket ack.\n",
+			"unexpected cmd: %d while waiting for socket ack.\n",
 			ep->ehdr.commandID);
 		return -1;
 	}
@@ -284,12 +285,12 @@ ep_send_frame(struct ep *ep, char *buf, int size)
 static int
 create_beamer_sockets(struct ep *ep, const char *beamer)
 {
+#if 0
 	char myhostname[HOST_NAME_MAX+1];
 
 	if (gethostname(myhostname, sizeof myhostname) < 0)
 		return -1;
 
-#if 0
 	/* Connection-procedure differes depending on udp or tcp:
 	 * If reqconnect is done via udp:
 	 *  Beamer tries to connet to 3620 on client
@@ -368,8 +369,9 @@ main(int argc, char *argv[])
 	len = read(ep.vnc_fd, &init, sizeof init);
 	printf("read init: %d\n", len);
 
-	printf("w: %hu, h: %hu\n", ntohs(init.msg.framebufferWidth), ntohs(init.msg.framebufferHeight));
-	//printf("name: %s\n", init.d.name);
+	printf("w: %hu, h: %hu\n",
+	       ntohs(init.msg.framebufferWidth),
+	       ntohs(init.msg.framebufferHeight));
 
 	/* values used by windows client */
 	init.msg.format.depth = 32;
@@ -379,7 +381,6 @@ main(int argc, char *argv[])
 
 	/* copied from wireshark */
 	init.msg.nameLength = htonl(3073);
-
 	
 	struct {
 		uint8_t cmd;
@@ -418,7 +419,8 @@ main(int argc, char *argv[])
 		3, 0,
 		htons(0), htons(0), htons(1024), htons(768)
 	};
-	write(ep.vnc_fd, &framebuffer_update_request, sizeof framebuffer_update_request);
+	write(ep.vnc_fd, &framebuffer_update_request,
+	      sizeof framebuffer_update_request);
 
 	struct framebuffer_update {
 		uint8_t cmd;
@@ -432,21 +434,16 @@ main(int argc, char *argv[])
 		uint8_t data[0];
 	};
 
-#if 0
-	ep.iov[0].iov_base = &framebuffer_update;
-	ep.iov[0].iov_len = sizeof framebuffer_update;
-	ep.iov[1].iov_base = buf;
-	ep.iov[1].iov_len = bufsiz;
-#endif
-
 	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
-	//len = readv(ep.vnc_fd, ep.iov, 2);
 	printf("read framebuffer update?: %d\n", len);
 
 	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
-	printf("cmd: %d, nrects: %d\n", framebuffer_update.cmd, ntohs(framebuffer_update.nrects));
+	printf("cmd: %d, nrects: %d\n", framebuffer_update.cmd,
+	       ntohs(framebuffer_update.nrects));
 
-	size_t bufsiz = framebuffer_update.nrects * (sizeof(struct rect) + 1024 * 768 * init.msg.format.bitsPerPixel/8);
+	size_t bufsiz = (framebuffer_update.nrects *
+			 (sizeof(struct rect) +
+			  1024 * 768 * init.msg.format.bitsPerPixel/8));
 	char *buf = malloc(bufsiz);
 	assert(buf != NULL);
 
@@ -455,10 +452,10 @@ main(int argc, char *argv[])
 
 	struct rect *rect = (void *) buf;
 	printf("x: %d, y: %d, w: %d, h: %d, encoding: %d\n",
-	       ntohs(rect->x), ntohs(rect->y), ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
+	       ntohs(rect->x), ntohs(rect->y),
+	       ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
 
 	FILE *img = fopen("/tmp/out.ppm", "w");
-	//write_ppm(img, 1024, 768, 4, buf);
 	write_ppm(img, 1024, 768, 4, rect->data);
 	fclose(img);
 
