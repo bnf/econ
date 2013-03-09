@@ -87,6 +87,52 @@ send_packet(struct ep *ep)
 	return writev(ep->ec_fd, ep->iov, i);
 }
 
+static int
+read_packet(struct ep *ep)
+{
+	ssize_t len;
+
+	init_iov(ep);
+
+	len = readv(ep->ec_fd, ep->iov, 3);
+	if (len < 0)
+		return -1;
+
+	if (len < sizeof(struct econ_header)) {
+		fprintf(stderr, "read_packet: error: incomplete header\n");
+		return -1;
+	}
+
+	if (len < sizeof(struct econ_header) + ep->ehdr.datasize) {
+		fprintf(stderr, "packet has invalid datasize\n");
+		return -1;
+	}
+
+	if (ep->ehdr.datasize > 0) {
+		if (ep->ehdr.datasize < sizeof(struct econ_command)) {
+			fprintf(stderr,
+				"read_packet: error: command to short\n");
+			return -1;
+		}
+
+		if (ep->ecmd.recordCount > 0) {
+			if (ep->ecmd.recordCount > 1) {
+				fprintf(stderr, "read_packet: did not expect a"
+					" packet with more that one record: %d, datasize: %d.\n",
+					ep->ecmd.recordCount, ep->ehdr.datasize);
+				return -1;
+			}
+			if (ep->ehdr.datasize != (sizeof (struct econ_command) +
+						  sizeof (struct econ_record))) {
+				fprintf(stderr, "read_packet: datasize incorrect\n");
+				return -1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 static void
 write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
 {
@@ -115,35 +161,43 @@ ep_keepalive(struct ep *ep)
 static int
 ep_get_clientinfo(struct ep *ep)
 {
-	char buf[BUFSIZ], buf2[BUFSIZ];
-	size_t len;
-
 	init_packet(ep, E_CMD_IPSEARCH);
 	send_packet(ep);
 
-	len = read(ep->ec_fd, buf, BUFSIZ);
-	struct econ_header *hdr = (void *) buf;
-	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
-
-	if (len < (sizeof (struct econ_header) +
-		   sizeof (struct econ_command) +
-		   sizeof (struct econ_record))) {
-		fprintf(stderr, "error: Invalid packet received.\n");
+	if (read_packet(ep) < 0)
+		return -1;
+	if (ep->ehdr.commandID != E_CMD_CLIENTINFO) {
+		fprintf(stderr, "expected clientinfo, got: %d\n",
+			ep->ehdr.commandID);
 		return -1;
 	}
 
-	struct econ_command *ecmd = (void *) (buf + sizeof (struct econ_header));
+	if (ep->ehdr.datasize == 0 || ep->ecmd.recordCount == 0) {
+		fprintf(stderr, "missing record in clientinfo\n");
+		return -1;
+	}
+	printf("clientinfo: read cmd: %d\n", ep->ehdr.commandID);
+
 	printf("clientinfo unknown value: %hu\n",
-	       ecmd->command.clientinfo.unknown_field_1);
+	       ep->ecmd.command.clientinfo.unknown_field_1);
 	/* cache projUniqInfo needed for reqconnect */
-	struct econ_record *erec = (void *) (buf + sizeof (struct econ_header) +
-					     sizeof (struct econ_command));
-	memcpy(ep->projUniqInfo, erec->projUniqInfo, ECON_UNIQINFO_LENGTH);
+	memcpy(ep->projUniqInfo, ep->erec.projUniqInfo, ECON_UNIQINFO_LENGTH);
 
 #if 1
-	len = read(ep->ec_fd, buf2, BUFSIZ);
-	hdr = (void *) buf2;
+	char buf[BUFSIZ];
+	ssize_t len = read(ep->ec_fd, buf, BUFSIZ);
+	struct econ_header *hdr = (void *) buf;
 	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
+#if 0
+	if (read_packet(ep) < 0)
+	    return -1;
+#endif
+
+	if (hdr->commandID != 21) {
+		fprintf(stderr, "expected ex clientinfo (21), got: %d\n",
+			hdr->commandID);
+		return -1;
+	}
 #endif
 
 	return 0;
@@ -204,7 +258,8 @@ ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
 
 	send_packet(ep);
 
-	readv(ep->ec_fd, ep->iov, 3);
+	if (read_packet(ep) < 0)
+		return -1;
 	if (ep->ehdr.commandID != E_CMD_CONNECTED) {
 		fprintf(stderr, "failed to connect: command was: %d\n",
 			ep->ehdr.commandID);
@@ -233,15 +288,8 @@ create_data_sockets(struct ep *ep, const char *beamer)
 static int
 ep_read_ack(struct ep *ep)
 {
-	size_t len;
-
-	init_iov(ep);
-
-	len = readv(ep->ec_fd, ep->iov, 2);
-	if (len < ep->iov[0].iov_len + ep->iov[1].iov_len) {
-		fprintf(stderr, "error: command received is to short\n");
+	if (read_packet(ep) < 0)
 		return -1;
-	}
 
 	switch (ep->ehdr.commandID) {
 	/* cack for connection video sockets */
@@ -255,6 +303,11 @@ ep_read_ack(struct ep *ep)
 		fprintf(stderr,
 			"unexpected cmd: %d while waiting for socket ack.\n",
 			ep->ehdr.commandID);
+		return -1;
+	}
+
+	if (ep->ehdr.datasize == 0) {
+		fprintf(stderr, "error: command 22 received is to short\n");
 		return -1;
 	}
 
