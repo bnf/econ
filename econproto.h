@@ -81,7 +81,10 @@ enum _e_EmpCommand {
 	E_CMD_CLIENTERROR	=	13,			
 	E_CMD_RESENDFULLSCRID	=	14,			
 	E_CMD_DISPLAYWAIT	=	15,			
-	E_CMD_SENDKEY		=	16          
+	E_CMD_SENDKEY		=	16, 
+
+	E_CMD_22		=	22,
+	E_CMD_25		=	25
 };
 
 enum _e_ProjType {
