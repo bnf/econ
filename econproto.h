@@ -145,6 +145,8 @@ typedef struct {
 	uint8_t	projState;							
 	uint8_t	useKeyword;							
 	uint8_t	displayType;						
+	uint8_t implicit_padding;
+	uint16_t unknown_field_1; /* value: 256 */
 } e_command_clientinfo;
 
 
@@ -153,6 +155,9 @@ typedef struct {
 	uint8_t	EncPassword[ECON_ENCRYPTION_MAXLEN];
 	uint8_t	subnetMask[ECON_IPADDRESS_SIZE];	
 	uint8_t	gateAddress[ECON_IPADDRESS_SIZE];	
+	uint8_t unknown_field_1; /* value: 0x02 */
+	uint8_t unknown_field_2; /* value: 0x01 */
+	uint8_t unknown_field_3; /* value: 0x03 */
 	rfbServerInitMsg vnesInitMsg;					
 } e_command_reqconnect;
 
