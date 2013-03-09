@@ -8,79 +8,55 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <netdb.h>
-#include <net/if.h>
-#include <net/if_arp.h>
-#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#include <poll.h>
+#include <limits.h>
 
 #include "econproto.h"
-
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define ARRAY_SIZE(arr) (sizeof (arr) / sizeof ((arr)[0]))
+#include "util.h"
 
 struct ep {
 	int vnc_mfd;
 	int vnc_fd;
 
+	int ec_fd;
+	int ec_sfd;
+
+	int video_fd;
+	int audio_fd;
+
 	struct iovec iov[3];
+	struct econ_header ehdr;
+	struct econ_command ecmd;
+	struct econ_record erec;
+
+	uint8_t projUniqInfo[ECON_UNIQINFO_LENGTH];	
 };
 
 
-/* From systemd:src/shared/util.c */
+static void
+init_header(struct econ_header *ehdr, int commandID)
+{
+	memset(ehdr, 0, sizeof *ehdr);
 
-static ssize_t
-loop_read(int fd, void *buf, size_t nbytes, uint8_t do_poll) {
-        uint8_t *p;
-        ssize_t n = 0;
+	strncpy(ehdr->magicnum, ECON_MAGIC_NUMBER,  ECON_MAGICNUM_SIZE);
+	strncpy(ehdr->version,  ECON_PROTO_VERSION, ECON_PROTOVER_MAXLEN);
 
-        assert(fd >= 0);
-        assert(buf);
+	ehdr->datasize = 0;
+	ehdr->commandID = commandID;
+}
 
-        p = buf;
-
-        while (nbytes > 0) {
-                ssize_t k;
-
-                if ((k = read(fd, p, nbytes)) <= 0) {
-
-                        if (k < 0 && errno == EINTR)
-                                continue;
-
-                        if (k < 0 && errno == EAGAIN && do_poll) {
-                                struct pollfd pollfd;
-
-                                memset(&pollfd, 0, sizeof pollfd);
-                                pollfd.fd = fd;
-                                pollfd.events = POLLIN;
-
-                                if (poll(&pollfd, 1, -1) < 0) {
-                                        if (errno == EINTR)
-                                                continue;
-
-                                        return n > 0 ? n : -errno;
-                                }
-
-                                if (pollfd.revents != POLLIN)
-                                        return n > 0 ? n : -EIO;
-
-                                continue;
-                        }
-
-                        return n > 0 ? n : (k < 0 ? -errno : 0);
-                }
-
-                p += k;
-                nbytes -= k;
-                n += k;
-        }
-
-        return n;
+static void
+init_iov(struct ep *ep)
+{
+	ep->iov[0].iov_base = &ep->ehdr;
+	ep->iov[0].iov_len = sizeof ep->ehdr;
+	ep->iov[1].iov_base = &ep->ecmd;
+	ep->iov[1].iov_len = sizeof ep->ecmd;
+	ep->iov[2].iov_base = &ep->erec;
+	ep->iov[2].iov_len = sizeof ep->erec;
 }
 
 static void
@@ -98,44 +74,182 @@ write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
 	}
 }
 
+static int
+ep_keepalive(struct ep *ep)
+{
+	init_iov(ep);
+	init_header(&ep->ehdr, E_CMD_KEEPALIVE);
+	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+
+	if (writev(ep->ec_fd, ep->iov, 1) < 0)
+		return -1;
+
+	return 0;
+}
 
 static int
-bind_socket(int socktype, char *host, char *port)
+ep_get_clientinfo(struct ep *ep)
 {
-	struct addrinfo hints, *result, *rp;
-	int reuseaddr = 1, s;
-	int fd;
+	char buf[BUFSIZ], buf2[BUFSIZ];
+	size_t len;
 
-	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = socktype;
+	//int fd = connect_to_host(SOCK_DGRAM, "ep", "3620");
+	init_iov(ep);
+	init_header(&ep->ehdr, E_CMD_IPSEARCH);
+	//init_header(&ep->ehdr, E_CMD_EASYSEARCH);
+	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	ep->ehdr.datasize = 0;
 
-	s = getaddrinfo(host, port, &hints, &result);
-	if (s != 0) {
-		fprintf(stderr, "getaddrinfo :%s\n", gai_strerror(s));
-		return -1;
-	}
-	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-		if (fd == -1)
-			continue;
-		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-			       &reuseaddr, sizeof(reuseaddr)) == -1)
-			continue;
+	writev(ep->ec_fd, ep->iov, 1);
+	//writev(fd, ep->iov, 1);
 
-		/*ip = ((struct sockaddr_in *)rp->ai_addr)->sin_addr.s_addr;*/
-		if (bind(fd, rp->ai_addr, rp->ai_addrlen) == 0)
-			break;
+	len = read(ep->ec_fd, buf, BUFSIZ);
+	//len = read(fd, buf, BUFSIZ);
+	struct econ_header *hdr = (void *) buf;
+	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
 
-		close(fd);
-	}
-	freeaddrinfo(result);
-	if (rp == NULL) {
-		fprintf(stderr, "Failed to bind: %s\n", strerror(errno));
+	if (len < (sizeof (struct econ_header) +
+		   sizeof (struct econ_command) +
+		   sizeof (struct econ_record))) {
+		fprintf(stderr, "error: Invalid packet received.\n");
 		return -1;
 	}
 
-	return fd;
+	struct econ_command *ecmd = (void *) (buf + sizeof (struct econ_header));
+	printf("clientinfo unknown value: %hu\n",
+	       ecmd->command.clientinfo.unknown_field_1);
+	/* cache projUniqInfo needed for reqconnect */
+	struct econ_record *erec = (void *) (buf + sizeof (struct econ_header) +
+					     sizeof (struct econ_command));
+	memcpy(ep->projUniqInfo, erec->projUniqInfo, ECON_UNIQINFO_LENGTH);
+
+#if 1
+	len = read(ep->ec_fd, buf2, BUFSIZ);
+	//len = read(fd, buf2, BUFSIZ);
+	hdr = (void *) buf2;
+	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
+#endif
+
+	//close(fd);
+
+	return 0;
+}
+
+static void
+vnes_ntoh(rfbServerInitMsg *vnes1, rfbServerInitMsg *vnes2)
+{
+	memset(vnes2, 0, sizeof *vnes2);
+
+	vnes2->framebufferWidth     = ntohs(vnes1->framebufferWidth);
+	vnes2->framebufferHeight    = ntohs(vnes1->framebufferHeight);
+	vnes2->format.bitsPerPixel  = vnes1->format.bitsPerPixel;
+	vnes2->format.depth         = vnes1->format.depth;
+	vnes2->format.bigEndian     = vnes1->format.bigEndian;
+	vnes2->format.trueColour    = vnes1->format.trueColour != 0;
+
+	vnes2->format.redMax        = ntohs(vnes1->format.redMax);
+	vnes2->format.greenMax      = ntohs(vnes1->format.greenMax);
+	vnes2->format.blueMax       = ntohs(vnes1->format.blueMax);
+	
+	vnes2->format.redShift      = vnes1->format.redShift;	
+	vnes2->format.greenShift    = vnes1->format.greenShift;
+	vnes2->format.blueShift     = vnes1->format.blueShift;
+
+	vnes2->nameLength           = ntohl(vnes1->nameLength);
+}
+
+
+static int
+ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
+{
+	init_iov(ep);
+	init_header(&ep->ehdr, E_CMD_REQCONNECT);
+
+	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	ep->ehdr.datasize = sizeof ep->ecmd + sizeof ep->erec;
+
+	memset(&ep->ecmd, 0, sizeof ep->ecmd);
+	memset(&ep->erec, 0, sizeof ep->erec);
+
+	vnes_ntoh(vnes, &ep->ecmd.command.reqconnect.vnesInitMsg);
+
+	ep->ecmd.recordCount = 1;
+	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
+
+	set_ip(ep->ecmd.command.reqconnect.subnetMask,
+	       sock_get_netmask(ep->ec_fd));
+
+#if 1
+	/* FIXME: need to set gateway address? */
+	ep->ecmd.command.reqconnect.gateAddress[0] = 192;
+	ep->ecmd.command.reqconnect.gateAddress[1] = 168;
+	ep->ecmd.command.reqconnect.gateAddress[2] = 1;
+	ep->ecmd.command.reqconnect.gateAddress[3] = 1;
+#endif
+
+	ep->ecmd.command.reqconnect.unknown_field_1 = 0x02;
+	ep->ecmd.command.reqconnect.unknown_field_2 = 0x01;
+	ep->ecmd.command.reqconnect.unknown_field_3 = 0x03;
+
+	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
+#if 0
+	memcpy(ep->ecmd.command.reqconnect.EncPassword, "82091965",
+	       ECON_ENCRYPTION_MAXLEN);
+#endif
+
+	writev(ep->ec_fd, ep->iov, 3);
+
+	readv(ep->ec_fd, ep->iov, 3);
+	if (ep->ehdr.commandID != E_CMD_CONNECTED) {
+		fprintf(stderr, "failed to connect: command was: %d\n",
+			ep->ehdr.commandID);
+		return -1;
+	}
+
+	ep_keepalive(ep);
+		
+	return 0;
+}
+
+static int
+create_data_sockets(struct ep *ep, const char *beamer)
+{
+	ep->video_fd = connect_to_host(SOCK_STREAM, beamer, "3621");
+	if (ep->video_fd < 0)
+		return -1;
+
+	ep->audio_fd = connect_to_host(SOCK_STREAM, beamer, "3621");
+	if (ep->audio_fd < 0)
+		return -1;
+
+	return 0;
+}
+
+static int
+create_beamer_sockets(struct ep *ep, const char *beamer)
+{
+	char myhostname[HOST_NAME_MAX+1];
+
+	if (gethostname(myhostname, sizeof myhostname) < 0)
+		return -1;
+
+#if 0
+	/* Connection-procedure differes depending on udp or tcp:
+	 * If reqconnect is done via udp:
+	 *  Beamer tries to connet to 3620 on client
+	 * If reqconnect is done via tcp:a
+	 *  Beamer resuses tcp connection
+	 */
+	ep->ec_sfd = bind_socket(SOCK_STREAM, myhostname, STR(ECON_PORTNUMBER));
+	if (ep->ec_sfd < 0)
+		return -1;
+#endif
+
+	ep->ec_fd = connect_to_host(SOCK_STREAM, beamer, STR(ECON_PORTNUMBER));
+	if (ep->ec_fd < 0)
+		return -1;
+
+	return 0;
 }
 
 int
@@ -143,15 +257,18 @@ main(int argc, char *argv[])
 {
 	struct ep ep;
 	int len;
+	const char *beamer;
 
 	memset(&ep, 0, sizeof ep);
+
+	if (argc < 2)
+		exit(EXIT_FAILURE);
+
+	beamer = argv[1];
 
 	ep.vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
 	if (ep.vnc_mfd < 0)
 		exit(EXIT_FAILURE);
-	if (listen(ep.vnc_mfd, 1) != 0)
-		exit(EXIT_FAILURE);
-
 
 	ep.vnc_fd = accept(ep.vnc_mfd, NULL, NULL);
 	if (ep.vnc_fd < 0)
@@ -192,11 +309,20 @@ main(int argc, char *argv[])
 	};
 	union init init;
 
-
 	len = read(ep.vnc_fd, &init, sizeof init);
 	printf("read init: %d\n", len);
 
 	printf("w: %hu, h: %hu\n", ntohs(init.msg.framebufferWidth), ntohs(init.msg.framebufferHeight));
+	//printf("name: %s\n", init.d.name);
+
+	/* values used by windows client */
+	init.msg.format.depth = 32;
+	init.msg.format.redShift = 0;
+	init.msg.format.greenShift = 8;
+	init.msg.format.blueShift = 16;
+
+	/* copied from wireshark */
+	init.msg.nameLength = htonl(3073);
 
 	
 	struct {
@@ -276,19 +402,29 @@ main(int argc, char *argv[])
 	       ntohs(rect->x), ntohs(rect->y), ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
 
 	FILE *img = fopen("/tmp/out.ppm", "w");
-	write_ppm(img, 1024, 768, 4, buf);
+	//write_ppm(img, 1024, 768, 4, buf);
+	write_ppm(img, 1024, 768, 4, rect->data);
 	fclose(img);
 
 
-	/*
-	len = read(ep.vnc_fd, buf, bufsiz);
-	printf("read framebuffer update data?: %d\n", len);
+	if (create_beamer_sockets(&ep, beamer) < 0)
+		exit(EXIT_FAILURE);
 
-	while (len > 0) {
-		len = read(ep.vnc_fd, buf, bufsiz);
-		printf("read framebuffer update data?: %d\n", len);
+	if (ep_get_clientinfo(&ep) < 0)
+		exit(EXIT_FAILURE);
+
+	if (ep_reqconnect(&ep, &init.msg) < 0)
+		exit(EXIT_FAILURE);
+
+	if (create_data_sockets(&ep, beamer) < 0)
+		exit(EXIT_FAILURE);
+
+	while (1) {
+		ep_keepalive(&ep);
+		sleep(5);
 	}
-	*/
 
 	pause();
+
+	return 0;
 }
