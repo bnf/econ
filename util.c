@@ -58,14 +58,6 @@ sock_get_peer_ipv4_addr(int fd)
 	return own->sin_addr.s_addr;
 }
 
-#if 0
-uint32_t
-sock_get_peer_mac_addr(int fd)
-{
-
-}
-#endif
-
 void
 set_ip(uint8_t *ipbuf, uint32_t ip)
 {
