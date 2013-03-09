@@ -73,6 +73,20 @@ init_packet(struct ep *ep, int commandID)
 	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
 }
 
+static int
+send_packet(struct ep *ep)
+{
+	int i = 1;
+
+	if (ep->ehdr.datasize > 0) {
+		i++;
+		if (ep->ecmd.recordCount == 1)
+			i++;
+	}
+
+	return writev(ep->ec_fd, ep->iov, i);
+}
+
 static void
 write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
 {
@@ -92,8 +106,7 @@ static int
 ep_keepalive(struct ep *ep)
 {
 	init_packet(ep, E_CMD_KEEPALIVE);
-
-	if (writev(ep->ec_fd, ep->iov, 1) < 0)
+	if (send_packet(ep) < 0)
 		return -1;
 
 	return 0;
@@ -106,7 +119,7 @@ ep_get_clientinfo(struct ep *ep)
 	size_t len;
 
 	init_packet(ep, E_CMD_IPSEARCH);
-	writev(ep->ec_fd, ep->iov, 1);
+	send_packet(ep);
 
 	len = read(ep->ec_fd, buf, BUFSIZ);
 	struct econ_header *hdr = (void *) buf;
@@ -189,7 +202,7 @@ ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
 	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
 	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
 
-	writev(ep->ec_fd, ep->iov, 3);
+	send_packet(ep);
 
 	readv(ep->ec_fd, ep->iov, 3);
 	if (ep->ehdr.commandID != E_CMD_CONNECTED) {
@@ -250,7 +263,7 @@ ep_read_ack(struct ep *ep)
 	ep->ecmd.command.cmd25.unknown_field1 = 1;
 	ep->ecmd.command.cmd25.unknown_field2 = 1;
 
-	writev(ep->ec_fd, ep->iov, 1);
+	send_packet(ep);
 
 	return 0;
 }
