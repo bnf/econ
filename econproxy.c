@@ -93,18 +93,14 @@ ep_get_clientinfo(struct ep *ep)
 	char buf[BUFSIZ], buf2[BUFSIZ];
 	size_t len;
 
-	//int fd = connect_to_host(SOCK_DGRAM, "ep", "3620");
 	init_iov(ep);
 	init_header(&ep->ehdr, E_CMD_IPSEARCH);
-	//init_header(&ep->ehdr, E_CMD_EASYSEARCH);
 	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
 	ep->ehdr.datasize = 0;
 
 	writev(ep->ec_fd, ep->iov, 1);
-	//writev(fd, ep->iov, 1);
 
 	len = read(ep->ec_fd, buf, BUFSIZ);
-	//len = read(fd, buf, BUFSIZ);
 	struct econ_header *hdr = (void *) buf;
 	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
 
@@ -125,12 +121,9 @@ ep_get_clientinfo(struct ep *ep)
 
 #if 1
 	len = read(ep->ec_fd, buf2, BUFSIZ);
-	//len = read(fd, buf2, BUFSIZ);
 	hdr = (void *) buf2;
 	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
 #endif
-
-	//close(fd);
 
 	return 0;
 }
