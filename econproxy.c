@@ -62,6 +62,18 @@ init_iov(struct ep *ep)
 }
 
 static void
+init_packet(struct ep *ep, int commandID)
+{
+	init_iov(ep);
+
+	memset(&ep->erec, 0, sizeof ep->erec);
+	memset(&ep->ecmd, 0, sizeof ep->ecmd);
+	init_header(&ep->ehdr, commandID);
+
+	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+}
+
+static void
 write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
 {
 	int i;
@@ -79,9 +91,7 @@ write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
 static int
 ep_keepalive(struct ep *ep)
 {
-	init_iov(ep);
-	init_header(&ep->ehdr, E_CMD_KEEPALIVE);
-	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	init_packet(ep, E_CMD_KEEPALIVE);
 
 	if (writev(ep->ec_fd, ep->iov, 1) < 0)
 		return -1;
@@ -95,11 +105,7 @@ ep_get_clientinfo(struct ep *ep)
 	char buf[BUFSIZ], buf2[BUFSIZ];
 	size_t len;
 
-	init_iov(ep);
-	init_header(&ep->ehdr, E_CMD_IPSEARCH);
-	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
-	ep->ehdr.datasize = 0;
-
+	init_packet(ep, E_CMD_IPSEARCH);
 	writev(ep->ec_fd, ep->iov, 1);
 
 	len = read(ep->ec_fd, buf, BUFSIZ);
@@ -156,23 +162,13 @@ vnes_ntoh(rfbServerInitMsg *vnes1, rfbServerInitMsg *vnes2)
 static int
 ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
 {
-	init_iov(ep);
-	init_header(&ep->ehdr, E_CMD_REQCONNECT);
-
-	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	init_packet(ep, E_CMD_REQCONNECT);
 	ep->ehdr.datasize = sizeof ep->ecmd + sizeof ep->erec;
-
-	memset(&ep->ecmd, 0, sizeof ep->ecmd);
-	memset(&ep->erec, 0, sizeof ep->erec);
 
 	vnes_ntoh(vnes, &ep->ecmd.command.reqconnect.vnesInitMsg);
 
-	ep->ecmd.recordCount = 1;
-	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
-
 	set_ip(ep->ecmd.command.reqconnect.subnetMask,
 	       sock_get_netmask(ep->ec_fd));
-
 #if 1
 	/* FIXME: need to set gateway address? */
 	ep->ecmd.command.reqconnect.gateAddress[0] = 192;
@@ -184,12 +180,14 @@ ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
 	ep->ecmd.command.reqconnect.unknown_field_1 = 0x02;
 	ep->ecmd.command.reqconnect.unknown_field_2 = 0x01;
 	ep->ecmd.command.reqconnect.unknown_field_3 = 0x03;
-
-	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
 #if 0
 	memcpy(ep->ecmd.command.reqconnect.EncPassword, "82091965",
 	       ECON_ENCRYPTION_MAXLEN);
 #endif
+
+	ep->ecmd.recordCount = 1;
+	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
+	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
 
 	writev(ep->ec_fd, ep->iov, 3);
 
@@ -247,15 +245,8 @@ ep_read_ack(struct ep *ep)
 		return -1;
 	}
 
-	init_iov(ep);
-	init_header(&ep->ehdr, E_CMD_REQCONNECT);
-
-	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
+	init_packet(ep, E_CMD_25);
 	ep->ehdr.datasize = sizeof ep->ecmd;
-
-	memset(&ep->ecmd, 0, sizeof ep->ecmd);
-
-	ep->ehdr.commandID = 25;
 	ep->ecmd.command.cmd25.unknown_field1 = 1;
 	ep->ecmd.command.cmd25.unknown_field2 = 1;
 
