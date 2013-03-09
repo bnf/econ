@@ -485,7 +485,5 @@ main(int argc, char *argv[])
 		sleep(5);
 	}
 
-	pause();
-
 	return 0;
 }
