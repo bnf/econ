@@ -486,6 +486,7 @@ main(int argc, char *argv[])
 	       ntohs(init.msg.framebufferWidth),
 	       ntohs(init.msg.framebufferHeight));
 
+#if 0
 	/* values used by windows client */
 	init.msg.format.depth = 32;
 	init.msg.format.redShift = 0;
@@ -494,6 +495,7 @@ main(int argc, char *argv[])
 
 	/* copied from wireshark */
 	init.msg.nameLength = htonl(3073);
+#endif
 	
 	struct {
 		uint8_t cmd;
