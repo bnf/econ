@@ -115,6 +115,12 @@ read_packet(struct ep *ep)
 			return -1;
 		}
 
+		/* Keepalive is an irregular if datasize > 0:
+		 *  the regular field recordCount is 1,
+		 *  without actually having one. */
+		if (ep->ehdr.commandID == E_CMD_KEEPALIVE)
+			return 0;
+
 		if (ep->ecmd.recordCount > 0) {
 			if (ep->ecmd.recordCount > 1) {
 				fprintf(stderr, "read_packet: did not expect a"
