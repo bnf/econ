@@ -60,6 +60,12 @@ struct rfb_framebuffer_update {
 	uint16_t nrects;
 };
 
+struct rfb_frame {
+	uint16_t x, y, w, h;
+	int32_t encoding;
+	uint8_t data[0];
+};
+
 static void
 init_header(struct econ_header *ehdr, int commandID)
 {
@@ -422,6 +428,77 @@ rfb_framebuffer_update_request(struct ep *ep, int incremental)
 		     sizeof framebuffer_update_request);
 }
 
+static int
+rfb_retreive_framebuffer_update(struct ep *ep)
+{
+	struct rfb_framebuffer_update framebuffer_update;
+	int i;
+	struct iovec *iov;
+
+	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
+
+	printf("read framebuffer update?: %d\n", len);
+
+	if (framebuffer_update.nrects == 0) {
+		fprintf(stderr, "error: invalid number of rects\n");
+		return -1;
+	}
+
+	iov = malloc(2 * framebuffer_update.nrects * sizeof *iov);
+	if (iov == NULL)
+		return -1;
+
+	for (i = 0; i < framebuffer_update.nrects; ++i) {
+		struct rfb_frame *frame = malloc(sizeof *frame);
+		char *data;
+		size_t size;
+
+		if (frame == NULL) {
+			/* FIXME: Free previous */
+			return -1;
+		}
+
+		iov[i*2+0].iov_base = frame;
+		iov[i*2+0].iov_len = sizeof *frame;
+
+		readv(ep->vnc_fd, iov[i*2+0], 1);
+
+		
+		switch (frame->encoding) {
+		case 0:
+			size = (frame->width - frame->x) * (frame->height - frame->y) * 32/8;
+			break;
+		default:
+			return -1;
+		}
+
+		data = malloc(size);
+		if (data == NULL)
+			return -1;
+
+		iov[i*2+1].iov_base = data;
+		iov[i*2+1].iov_len = size;
+	}
+
+	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
+	printf("cmd: %d, nrects: %d\n", framebuffer_update.cmd,
+	       ntohs(framebuffer_update.nrects));
+
+	size_t bufsiz = (framebuffer_update.nrects *
+			 (sizeof(struct rfb_frame) +
+			  1024 * 768 * init.msg.format.bitsPerPixel/8));
+	char *buf = malloc(bufsiz);
+	assert(buf != NULL);
+
+	len = loop_read(ep.vnc_fd, buf, bufsiz, 0);
+	printf("read framebuffer update data?: %d\n", len);
+
+	struct rfb_frame *rect = (void *) buf;
+	printf("x: %d, y: %d, w: %d, h: %d, encoding: %d\n",
+	       ntohs(rect->x), ntohs(rect->y),
+	       ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -528,12 +605,6 @@ main(int argc, char *argv[])
 
 	rfb_framebuffer_update_request(&ep, 0);
 
-	struct rect {
-		uint16_t x, y, w, h;
-		int32_t encoding;
-		uint8_t data[0];
-	};
-
 	struct rfb_framebuffer_update framebuffer_update;
 	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
 	printf("read framebuffer update?: %d\n", len);
@@ -543,7 +614,7 @@ main(int argc, char *argv[])
 	       ntohs(framebuffer_update.nrects));
 
 	size_t bufsiz = (framebuffer_update.nrects *
-			 (sizeof(struct rect) +
+			 (sizeof(struct rfb_frame) +
 			  1024 * 768 * init.msg.format.bitsPerPixel/8));
 	char *buf = malloc(bufsiz);
 	assert(buf != NULL);
@@ -551,7 +622,7 @@ main(int argc, char *argv[])
 	len = loop_read(ep.vnc_fd, buf, bufsiz, 0);
 	printf("read framebuffer update data?: %d\n", len);
 
-	struct rect *rect = (void *) buf;
+	struct rfb_frame *rect = (void *) buf;
 	printf("x: %d, y: %d, w: %d, h: %d, encoding: %d\n",
 	       ntohs(rect->x), ntohs(rect->y),
 	       ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
@@ -584,6 +655,8 @@ main(int argc, char *argv[])
 
 	while (1) {
 		ep_keepalive(&ep);
+		rfb_framebuffer_update_request(&ep, 1);
+
 		sleep(5);
 	}
 
