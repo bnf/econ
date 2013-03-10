@@ -18,16 +18,12 @@
 #include <sys/select.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <netdb.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <netinet/in.h>
 
 #include "econproto.h"
-
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define ARRAY_SIZE(arr) (sizeof (arr) / sizeof ((arr)[0]))
-
+#include "util.h"
 
 struct e_cmd21 {
 	char projUniqInfo[6];
@@ -101,45 +97,6 @@ struct ecs {
 	int data_index;
 };
 
-static int
-bind_socket(int socktype, char *host, char *port)
-{
-	struct addrinfo hints, *result, *rp;
-	int reuseaddr = 1, s;
-	int fd;
-
-	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = socktype;
-
-	s = getaddrinfo(host, port, &hints, &result);
-	if (s != 0) {
-		fprintf(stderr, "getaddrinfo :%s\n", gai_strerror(s));
-		return -1;
-	}
-	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-		if (fd == -1)
-			continue;
-		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-			       &reuseaddr, sizeof(reuseaddr)) == -1)
-			continue;
-
-		/*ip = ((struct sockaddr_in *)rp->ai_addr)->sin_addr.s_addr;*/
-		if (bind(fd, rp->ai_addr, rp->ai_addrlen) == 0)
-			break;
-
-		close(fd);
-	}
-	freeaddrinfo(result);
-	if (rp == NULL) {
-		fprintf(stderr, "Failed to bind: %s\n", strerror(errno));
-		return -1;
-	}
-
-	return fd;
-}
-
 static void
 get_hwaddr(struct ecs *ecs)
 {
@@ -169,30 +126,6 @@ init_header(struct econ_header *ehdr, int commandID)
 
 	ehdr->datasize = 0;
 	ehdr->commandID = commandID;
-}
-
-static uint32_t
-sock_get_ipv4_addr(int fd)
-{
-	struct sockaddr_storage storage;
-	struct sockaddr_in *own = (struct sockaddr_in *) &storage;
-	socklen_t addrlen = sizeof(struct sockaddr_storage);
-
-	assert(getsockname(fd, (struct sockaddr *) &storage, &addrlen) == 0);
-	
-	return own->sin_addr.s_addr;
-}
-
-static uint32_t
-sock_get_peer_ipv4_addr(int fd)
-{
-	struct sockaddr_storage storage;
-	struct sockaddr_in *own = (struct sockaddr_in *) &storage;
-	socklen_t addrlen = sizeof(struct sockaddr_storage);
-
-	assert(getpeername(fd, (struct sockaddr *) &storage, &addrlen) == 0);
-	
-	return own->sin_addr.s_addr;
 }
 
 static void
@@ -325,15 +258,6 @@ handle_input(struct ecs *ecs, char *in, int fd,
 }
 
 static void
-set_ip(uint8_t *ipbuf, uint32_t ip)
-{
-	ipbuf[0] = (ip & 0xFF);
-	ipbuf[1] = (ip & 0xFF00) >> 8;
-	ipbuf[2] = (ip & 0xFF0000) >> 16;
-	ipbuf[3] = (ip & 0xFF000000) >> 24;
-}
-
-static void
 recv_tcp(struct ecs *ecs)
 {
 	char in[BUFSIZ];
@@ -387,7 +311,7 @@ int main(int argc, char *argv[])
 {
 	struct ecs ecs;
 	char *host = NULL;
-	char *control_port = "3620";
+	char *control_port = STR(ECON_PORTNUMBER);
 	char *video_port = "3621";
 
 	memset(&ecs, 0, sizeof ecs);
@@ -405,14 +329,10 @@ int main(int argc, char *argv[])
 
 	ecs.fd = bind_socket(SOCK_STREAM, host, control_port);
 	assert(ecs.fd >= 0);
-	if (listen(ecs.fd, 2) != 0)
-		return 2;
 	get_hwaddr(&ecs);
 
 	ecs.data_fd = bind_socket(SOCK_STREAM, host, video_port);
 	assert(ecs.data_fd >= 0);
-	if (listen(ecs.data_fd, 2) != 0)
-		return 2;
 
 	ecs.udp_fd = bind_socket(SOCK_DGRAM, host, control_port);
 	assert(ecs.udp_fd >= 0);

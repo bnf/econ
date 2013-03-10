@@ -1,7 +1,7 @@
-all: econproxy
+all: econproxy epserv
 
 econproxy: econproxy.c util.c util.h econproto.h
 	gcc -ggdb -Wall -o $@ econproxy.c util.c
 
-epserv: epserv.c econproto.h
-	gcc -ggdb -Wall -o $@ $<
+epserv: epserv.c util.c util.h econproto.h 
+	gcc -ggdb -Wall -o $@ $< util.c
