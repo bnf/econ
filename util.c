@@ -28,61 +28,48 @@ sock_get_ipv4_addr(int fd)
 	return own->sin_addr.s_addr;
 }
 
-uint32_t
-sock_get_netmask(int fd)
+static struct ifreq *
+sock_get_ifreq(int fd)
 {
-#if 0
-	struct ifreq ifreq;
-#endif
 	struct ifconf ifconf;
-	struct ifreq ifreqs[16];
+	static struct ifreq ifreqs[16];
+	struct sockaddr_in *sin;
+	uint32_t own_ip;
 	int i;
-	uint32_t own_ip, ip;
 
 	own_ip = sock_get_ipv4_addr(fd);
-
-#if 0
-	memset(&ifreq, 0, sizeof ifreq);
-#endif
 
 	ifconf.ifc_len = sizeof ifreqs;
 	ifconf.ifc_req = ifreqs;
 	if (ioctl(fd, SIOCGIFCONF, &ifconf) < 0) {
 		fprintf(stderr, "retrieving interfaces failed: %s\n",
 			strerror(errno));
-		return 0;
+		return NULL;
 	}
 
 	for (i = 0; i < ifconf.ifc_len/sizeof(ifreqs[0]); i++) {
-		ip = ((struct sockaddr_in *) &ifreqs[i].ifr_addr)->sin_addr.s_addr;
+		sin = (struct sockaddr_in *) &ifreqs[i].ifr_addr;
 
-		printf("ifname: %s: ip: %08x", ifreqs[i].ifr_name,
-		       ((struct sockaddr_in *) &ifreqs[i].ifr_addr)->sin_addr.s_addr);
-
-		if (ip == own_ip) {
-			if (ioctl(fd, SIOCGIFNETMASK, &ifreqs[i]) < 0)
-				continue;
-			printf(", netmask: %08x\n", 
-			       ((struct sockaddr_in *) &ifreqs[i].ifr_netmask)->sin_addr.s_addr);
-			return ((struct sockaddr_in *) &ifreqs[i].ifr_netmask)->sin_addr.s_addr;
-		}
-		printf("\n");
+		if (sin->sin_addr.s_addr == own_ip)
+			return &ifreqs[i];
 	}
 
-	/* Failure */
-	return 0;
- 
-#if 0
-	/* FIXME: do not hardcode interface name */
-	strcpy(ifreq.ifr_name, "wlp3s0");
+	return NULL;
+}
 
-	if (ioctl(fd, SIOCGIFNETMASK, &ifreq) < 0) {
-		fprintf(stderr, "get netmask failed: %s\n", strerror(errno));
+uint32_t
+sock_get_netmask(int fd)
+{
+	struct ifreq *ifreq;
+
+	ifreq = sock_get_ifreq(fd);
+	if (ifreq == NULL)
 		return 0;
-	}
-
-	return ((struct sockaddr_in *) &ifreq.ifr_netmask)->sin_addr.s_addr;
-#endif
+	
+	if (ioctl(fd, SIOCGIFNETMASK, ifreq) < 0)
+		return 0;
+	
+	return ((struct sockaddr_in *) &ifreq->ifr_netmask)->sin_addr.s_addr;
 }
 
 uint32_t
