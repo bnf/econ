@@ -335,6 +335,7 @@ ep_send_frame(struct ep *ep, char *buf, int size)
 
 	strncpy(hdr.magicnum, "EPRD", ECON_MAGICNUM_SIZE);
 	strncpy(hdr.version,  "0600", ECON_PROTOVER_MAXLEN);
+	set_ip(hdr.IPaddress, sock_get_ipv4_addr(ep->video_fd));
 
 	hdr.commandID = 0;
 	hdr.datasize = size;
