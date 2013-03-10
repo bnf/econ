@@ -404,6 +404,24 @@ create_beamer_sockets(struct ep *ep, const char *beamer)
 	return 0;
 }
 
+static int
+rfb_framebuffer_update_request(struct ep *ep, int incremental)
+{
+	struct {
+		uint8_t cmd;
+		uint8_t incremental;
+		uint16_t x, y, w, h;
+	} framebuffer_update_request = {
+		3, 0,
+		htons(0), htons(0), htons(1024), htons(768)
+	};
+
+	framebuffer_update_request.incremental = incremental;
+
+	return write(ep->vnc_fd, &framebuffer_update_request,
+		     sizeof framebuffer_update_request);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -506,16 +524,7 @@ main(int argc, char *argv[])
 
 	write(ep.vnc_fd, &cmd_set_encodings, sizeof cmd_set_encodings);
 
-	struct {
-		uint8_t cmd;
-		uint8_t incremental;
-		uint16_t x, y, w, h;
-	} framebuffer_update_request = {
-		3, 0,
-		htons(0), htons(0), htons(1024), htons(768)
-	};
-	write(ep.vnc_fd, &framebuffer_update_request,
-	      sizeof framebuffer_update_request);
+	rfb_framebuffer_update_request(&ep, 0);
 
 	struct rect {
 		uint16_t x, y, w, h;
