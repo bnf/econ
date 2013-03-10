@@ -124,13 +124,15 @@ read_packet(struct ep *ep)
 		if (ep->ecmd.recordCount > 0) {
 			if (ep->ecmd.recordCount > 1) {
 				fprintf(stderr, "read_packet: did not expect a"
-					" packet with more that one record: %d, datasize: %d.\n",
+					" packet with more that one record:"
+					" %d, datasize: %d.\n",
 					ep->ecmd.recordCount, ep->ehdr.datasize);
 				return -1;
 			}
 			if (ep->ehdr.datasize != (sizeof (struct econ_command) +
 						  sizeof (struct econ_record))) {
-				fprintf(stderr, "read_packet: datasize incorrect\n");
+				fprintf(stderr, "read_packet: datasize incorrect, cmd: %d\n",
+					ep->ehdr.commandID);
 				return -1;
 			}
 		}
