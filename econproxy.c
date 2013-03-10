@@ -37,6 +37,11 @@ struct ep {
 	uint8_t projUniqInfo[ECON_UNIQINFO_LENGTH];	
 };
 
+struct rfb_framebuffer_update {
+	uint8_t cmd;
+	uint8_t padding;
+	uint16_t nrects;
+};
 
 static void
 init_header(struct econ_header *ehdr, int commandID)
@@ -332,7 +337,8 @@ ep_read_ack(struct ep *ep)
 }
 
 static int
-ep_send_frame(struct ep *ep, char *buf, int size)
+ep_send_frame(struct ep *ep, struct rfb_framebuffer_update *fbu,
+	      char *buf, int size)
 {
 	struct econ_header hdr;
 	memset(&hdr, 0, sizeof hdr);
@@ -342,10 +348,15 @@ ep_send_frame(struct ep *ep, char *buf, int size)
 	set_ip(hdr.IPaddress, sock_get_ipv4_addr(ep->video_fd));
 
 	hdr.commandID = 0;
-	hdr.datasize = size;
+	hdr.datasize = sizeof *fbu + size;
 
 	write(ep->video_fd, (void *) &hdr, sizeof hdr);
-	write(ep->video_fd, buf, size);
+
+	ep->iov[0].iov_base = fbu;
+	ep->iov[0].iov_len = sizeof *fbu;
+	ep->iov[1].iov_base = buf;
+	ep->iov[1].iov_len = size;
+	writev(ep->video_fd, ep->iov, 2);
 
 	return 0;
 }
@@ -490,18 +501,13 @@ main(int argc, char *argv[])
 	write(ep.vnc_fd, &framebuffer_update_request,
 	      sizeof framebuffer_update_request);
 
-	struct framebuffer_update {
-		uint8_t cmd;
-		uint8_t padding;
-		uint16_t nrects;
-	} framebuffer_update;
-
 	struct rect {
 		uint16_t x, y, w, h;
 		int32_t encoding;
 		uint8_t data[0];
 	};
 
+	struct rfb_framebuffer_update framebuffer_update;
 	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
 	printf("read framebuffer update?: %d\n", len);
 
@@ -545,7 +551,8 @@ main(int argc, char *argv[])
 	if (ep_read_ack(&ep) < 0)
 		exit(EXIT_FAILURE);
 
-	if (ep_send_frame(&ep, buf, bufsiz) < 0)
+	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
+	if (ep_send_frame(&ep, &framebuffer_update, buf, bufsiz) < 0)
 		exit(EXIT_FAILURE);
 
 	while (1) {
