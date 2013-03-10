@@ -14,12 +14,9 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <net/if.h>
-#include <net/if_arp.h>
 #include <netinet/in.h>
 
 #include "econproto.h"
@@ -100,18 +97,10 @@ struct ecs {
 static void
 get_hwaddr(struct ecs *ecs)
 {
-	struct ifreq ifreq;
-	char *m = &ifreq.ifr_hwaddr.sa_data[0];
+	uint8_t *m;
 
-	memset(&ifreq, 0, sizeof ifreq);
-
-	strcpy(ifreq.ifr_name, "tap0");
-	ioctl(ecs->fd, SIOCGIFHWADDR, &ifreq);
-	assert(ifreq.ifr_hwaddr.sa_family == ARPHRD_ETHER);
-#if 0
-	printf("hwaddr: %02hhx-%02hhx-%02hhx-%02hhx-%02hhx-%02hhx\n",
-	       m[0], m[1], m[2], m[3], m[4], m[5]);
-#endif
+	m = sock_get_hwaddr(ecs->fd);
+	assert(m != NULL);
 
 	memcpy(ecs->proj_uniq, m, 6);
 }

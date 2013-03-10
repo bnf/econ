@@ -72,6 +72,23 @@ sock_get_netmask(int fd)
 	return ((struct sockaddr_in *) &ifreq->ifr_netmask)->sin_addr.s_addr;
 }
 
+uint8_t *
+sock_get_hwaddr(int fd)
+{
+	struct ifreq *ifreq;
+
+	ifreq = sock_get_ifreq(fd);
+	if (ifreq == NULL)
+		return NULL;
+	
+	if (ioctl(fd, SIOCGIFHWADDR, ifreq) < 0)
+		return NULL;
+	if (ifreq->ifr_hwaddr.sa_family != ARPHRD_ETHER)
+		return NULL;
+
+	return (uint8_t *) &ifreq->ifr_hwaddr.sa_data[0];
+}
+
 uint32_t
 sock_get_peer_ipv4_addr(int fd)
 {

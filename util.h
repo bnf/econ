@@ -15,6 +15,8 @@ uint32_t
 sock_get_peer_ipv4_addr(int fd);
 uint32_t
 sock_get_netmask(int fd);
+uint8_t *
+sock_get_hwaddr(int fd);
 
 void
 set_ip(uint8_t *ipbuf, uint32_t ip);
