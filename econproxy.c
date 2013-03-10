@@ -307,6 +307,8 @@ ep_read_ack(struct ep *ep)
 		fprintf(stderr,
 			"connection failed: probably incorrect version?\n");
 		return -1;
+	case E_CMD_KEEPALIVE:
+		return ep_read_ack(ep);
 	default:
 		fprintf(stderr,
 			"unexpected cmd: %d while waiting for socket ack.\n",
