@@ -372,7 +372,7 @@ ep_send_frames(struct ep *ep, struct iovec *iov, int iovcnt, uint32_t datasize)
 	set_ip(hdr.IPaddress, sock_get_ipv4_addr(ep->video_fd));
 
 	hdr.commandID = 0;
-	hdr.datasize = datasize;
+	hdr.datasize = htonl(datasize);
 
 	write(ep->video_fd, (void *) &hdr, sizeof hdr);
 	writev(ep->video_fd, iov, iovcnt);
@@ -524,6 +524,8 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 	*piov = iov;
 	*iovcnt = 1 + i * 2;
 	*psize = datasize;
+
+	framebuffer_update->nrects = htons(framebuffer_update->nrects);
 
 	return 0;
 
