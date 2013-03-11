@@ -416,8 +416,11 @@ free_iov(struct iovec *iov, int iovcnt, int members_only)
 {
 	int i;
 
-	for (i = 0; i < iovcnt; ++i)
+	for (i = 0; i < iovcnt; ++i) {
+		if (iov[i].iov_base == NULL)
+			break;
 		free(iov[i].iov_base);
+	}
 	if (!members_only)
 		free(iov);
 }
@@ -563,17 +566,8 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 	return 0;
 
 err:
-	{
-		int n = 1 + framebuffer_update->nrects * 2;
+	free_iov(--iov, 1 + framebuffer_update->nrects * 2, 0);
 
-		iov--;
-		for (i = 0; i < n; ++i) {
-			if (iov[n].iov_base == NULL)
-				break;
-			free(iov[i].iov_base);
-		}
-		free(iov);
-	}
 	return -1;
 }
 
