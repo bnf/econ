@@ -251,12 +251,12 @@ vnes_ntoh(rfbServerInitMsg *vnes1, rfbServerInitMsg *vnes2)
 }
 
 static int
-ep_reqconnect(struct ep *ep, rfbServerInitMsg *vnes)
+ep_reqconnect(struct ep *ep)
 {
 	init_packet(ep, E_CMD_REQCONNECT);
 	ep->ehdr.datasize = sizeof ep->ecmd + sizeof ep->erec;
 
-	vnes_ntoh(vnes, &ep->ecmd.command.reqconnect.vnesInitMsg);
+	vnes_ntoh(&ep->vnesInitMsg, &ep->ecmd.command.reqconnect.vnesInitMsg);
 
 	set_ip(ep->ecmd.command.reqconnect.subnetMask,
 	       sock_get_netmask(ep->ec_fd));
@@ -682,6 +682,29 @@ rfb_init(struct ep *ep)
 	return 0;
 }
 
+static int
+econ_init(struct ep *ep, const char *beamer)
+{
+	if (create_beamer_sockets(ep, beamer) < 0)
+		return -1;
+
+	if (ep_get_clientinfo(ep) < 0)
+		return -1;
+
+	if (ep_reqconnect(ep) < 0)
+		return -1;
+
+	if (create_data_sockets(ep, beamer) < 0)
+		return -1;
+
+	ep_keepalive(ep);
+
+	if (ep_read_ack(ep) < 0)
+		return -1;
+
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -699,21 +722,7 @@ main(int argc, char *argv[])
 	if (rfb_init(&ep) < 0)
 		exit(EXIT_FAILURE);
 
-	if (create_beamer_sockets(&ep, beamer) < 0)
-		exit(EXIT_FAILURE);
-
-	if (ep_get_clientinfo(&ep) < 0)
-		exit(EXIT_FAILURE);
-
-	if (ep_reqconnect(&ep, &ep.vnesInitMsg) < 0)
-		exit(EXIT_FAILURE);
-
-	if (create_data_sockets(&ep, beamer) < 0)
-		exit(EXIT_FAILURE);
-
-	ep_keepalive(&ep);
-
-	if (ep_read_ack(&ep) < 0)
+	if (econ_init(&ep, beamer) < 0)
 		exit(EXIT_FAILURE);
 
 	while (1) {
