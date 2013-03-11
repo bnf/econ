@@ -122,22 +122,20 @@ econ_send_packet(struct ep *ep)
 static int
 econ_read_packet(struct ep *ep)
 {
-	ssize_t r;
-	size_t len;
+	union { ssize_t s; size_t u; } len;
 
 	init_iov(ep);
 
-	r = readv(ep->ec_fd, ep->iov, 3);
-	if (r < 0)
+	len.s = readv(ep->ec_fd, ep->iov, 3);
+	if (len.s < 0)
 		return -1;
-	len = (size_t) r;
 
-	if (len < sizeof(struct econ_header)) {
+	if (len.u < sizeof(struct econ_header)) {
 		fprintf(stderr, "econ_read_packet: error: incomplete header\n");
 		return -1;
 	}
 
-	if (len < sizeof(struct econ_header) + ep->ehdr.datasize) {
+	if (len.u < sizeof(struct econ_header) + ep->ehdr.datasize) {
 		fprintf(stderr, "packet has invalid datasize\n");
 		return -1;
 	}
