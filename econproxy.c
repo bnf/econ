@@ -474,6 +474,7 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 	for (i = 0; i < framebuffer_update->nrects; ++i) {
 		char *data;
 		size_t size;
+		off_t offset = 0;
 		ssize_t r;
 		struct rfb_frame *frame = malloc(sizeof *frame);
 
@@ -529,9 +530,9 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 					count = 3;
 				}
 			}
-			size = (sizeof compression_control +
-				count * sizeof(compact_len[0]) +
-				len);
+			offset = (sizeof compression_control +
+				  count * sizeof(compact_len[0]));
+			size = offset + len;
 			data = malloc(size);
 			if (data == NULL)
 				goto err;
@@ -553,8 +554,8 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		iov[i*2+1].iov_len = size;
 		datasize += size;
 
-		len = loop_read(ep->vnc_fd, data, size, 0);
-		if (len < 0 || (size_t) len != size)
+		len = loop_read(ep->vnc_fd, &data[offset], size-offset, 0);
+		if (len < 0 || (size_t) len != (size-offset))
 			goto err;
 
 	}
