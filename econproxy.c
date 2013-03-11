@@ -106,7 +106,7 @@ init_packet(struct ep *ep, int commandID)
 }
 
 static int
-send_packet(struct ep *ep)
+econ_send_packet(struct ep *ep)
 {
 	int i = 1;
 
@@ -120,7 +120,7 @@ send_packet(struct ep *ep)
 }
 
 static int
-read_packet(struct ep *ep)
+econ_read_packet(struct ep *ep)
 {
 	ssize_t len;
 
@@ -131,7 +131,7 @@ read_packet(struct ep *ep)
 		return -1;
 
 	if (len < sizeof(struct econ_header)) {
-		fprintf(stderr, "read_packet: error: incomplete header\n");
+		fprintf(stderr, "econ_read_packet: error: incomplete header\n");
 		return -1;
 	}
 
@@ -143,7 +143,7 @@ read_packet(struct ep *ep)
 	if (ep->ehdr.datasize > 0) {
 		if (ep->ehdr.datasize < sizeof(struct econ_command)) {
 			fprintf(stderr,
-				"read_packet: error: command to short\n");
+				"econ_read_packet: error: command to short\n");
 			return -1;
 		}
 
@@ -155,15 +155,15 @@ read_packet(struct ep *ep)
 
 		if (ep->ecmd.recordCount > 0) {
 			if (ep->ecmd.recordCount > 1) {
-				fprintf(stderr, "read_packet: did not expect a"
-					" packet with more that one record:"
-					" %d, datasize: %d.\n",
+				fprintf(stderr, "econ_read_packet:"
+					" did not expect a packet with more"
+					" that one record: %d, datasize: %d.\n",
 					ep->ecmd.recordCount, ep->ehdr.datasize);
 				return -1;
 			}
 			if (ep->ehdr.datasize != (sizeof (struct econ_command) +
 						  sizeof (struct econ_record))) {
-				fprintf(stderr, "read_packet: datasize incorrect, cmd: %d\n",
+				fprintf(stderr, "econ_read_packet: datasize incorrect, cmd: %d\n",
 					ep->ehdr.commandID);
 				return -1;
 			}
@@ -177,7 +177,7 @@ static int
 ep_keepalive(struct ep *ep)
 {
 	init_packet(ep, E_CMD_KEEPALIVE);
-	if (send_packet(ep) < 0)
+	if (econ_send_packet(ep) < 0)
 		return -1;
 
 	return 0;
@@ -187,9 +187,9 @@ static int
 ep_get_clientinfo(struct ep *ep)
 {
 	init_packet(ep, E_CMD_IPSEARCH);
-	send_packet(ep);
+	econ_send_packet(ep);
 
-	if (read_packet(ep) < 0)
+	if (econ_read_packet(ep) < 0)
 		return -1;
 	if (ep->ehdr.commandID != E_CMD_CLIENTINFO) {
 		fprintf(stderr, "expected clientinfo, got: %d\n",
@@ -213,7 +213,7 @@ ep_get_clientinfo(struct ep *ep)
 	struct econ_header *hdr = (void *) buf;
 	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
 #if 0
-	if (read_packet(ep) < 0)
+	if (econ_read_packet(ep) < 0)
 	    return -1;
 #endif
 
@@ -280,9 +280,9 @@ ep_reqconnect(struct ep *ep)
 	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
 	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
 
-	send_packet(ep);
+	econ_send_packet(ep);
 
-	if (read_packet(ep) < 0)
+	if (econ_read_packet(ep) < 0)
 		return -1;
 	if (ep->ehdr.commandID != E_CMD_CONNECTED) {
 		fprintf(stderr, "failed to connect: command was: %d\n",
@@ -312,7 +312,7 @@ create_data_sockets(struct ep *ep, const char *beamer)
 static int
 ep_read_ack(struct ep *ep)
 {
-	if (read_packet(ep) < 0)
+	if (econ_read_packet(ep) < 0)
 		return -1;
 
 	switch (ep->ehdr.commandID) {
@@ -342,7 +342,7 @@ ep_read_ack(struct ep *ep)
 	ep->ecmd.command.cmd25.unknown_field1 = 1;
 	ep->ecmd.command.cmd25.unknown_field2 = 1;
 
-	send_packet(ep);
+	econ_send_packet(ep);
 
 	return 0;
 }
