@@ -707,7 +707,7 @@ rfb_init(struct ep *ep)
 		uint32_t encodings[5];
 	} cmd_set_encodings = {
 		2, 0, htons(5),
-#if 0
+#if 1
 		{ htonl(0) /* RAW */, htonl(7) /* Tight */, htonl(6) /* Zlib */, htonl(16) /* ZRLE */, htonl(2) /* RRE */ }
 #else
 		{ htonl(6) /* Zlib */, htonl(2) /* RRE */, htonl(7) /* Tight */, htonl(16) /* ZRLE */, htonl(0) /* RAW */ }
