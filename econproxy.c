@@ -543,9 +543,10 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		}
 			break;
 #endif
-#if 0
+#if 1
 		/* seems to be not supported */
 		case 16: /* ZRLE */
+		case 6: /* Zlib */
 		{
 			uint32_t length;
 			if (read(ep->vnc_fd, &length, sizeof length) < 0)
@@ -684,13 +685,13 @@ rfb_init(struct ep *ep)
 		uint8_t cmd;
 		uint8_t padding;
 		uint16_t number_of_encodings;
-		uint32_t encodings[3];
+		uint32_t encodings[4];
 	} cmd_set_encodings = {
-		2, 0, htons(3),
-#if 1
-		{ htonl(0) /* RAW */, htonl(7) /* Tight */, htonl(16) /* ZRLE */ }
+		2, 0, htons(4),
+#if 0
+		{ htonl(0) /* RAW */, htonl(7) /* Tight */, htonl(6) /* Zlib */, htonl(16) /* ZRLE */ }
 #else
-		{ htonl(7) /* Tight */, htonl(16) /* ZRLE */, htonl(0) /* RAW */ }
+		{ htonl(6) /* Zlib */, htonl(7) /* Tight */, htonl(16) /* ZRLE */, htonl(0) /* RAW */ }
 #endif
 	};
 
