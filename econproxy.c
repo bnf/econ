@@ -535,6 +535,7 @@ main(int argc, char *argv[])
 	struct ep ep;
 	int len;
 	const char *beamer;
+	int incremental = 0;
 
 	memset(&ep, 0, sizeof ep);
 
@@ -633,15 +634,6 @@ main(int argc, char *argv[])
 
 	write(ep.vnc_fd, &cmd_set_encodings, sizeof cmd_set_encodings);
 
-	rfb_framebuffer_update_request(&ep, 0);
-
-	struct iovec *iov;
-	int iovcnt;
-	uint32_t datasize;
-
-	if (rfb_retrieve_framebuffer_update(&ep, &iov, &iovcnt, &datasize) < 0)
-		exit(EXIT_FAILURE);
-
 	if (create_beamer_sockets(&ep, beamer) < 0)
 		exit(EXIT_FAILURE);
 
@@ -659,16 +651,22 @@ main(int argc, char *argv[])
 	if (ep_read_ack(&ep) < 0)
 		exit(EXIT_FAILURE);
 
-	if (ep_send_frames(&ep, iov, iovcnt, datasize) < 0)
-		exit(EXIT_FAILURE);
-
-	free_iov(iov, iovcnt, 0);
-
 	while (1) {
-		ep_keepalive(&ep);
-		rfb_framebuffer_update_request(&ep, 1);
+		struct iovec *iov;
+		int iovcnt;
+		uint32_t datasize;
 
-		sleep(5);
+		ep_keepalive(&ep);
+		rfb_framebuffer_update_request(&ep, incremental);
+		if (rfb_retrieve_framebuffer_update(&ep, &iov, &iovcnt,
+						&datasize) == 0) {
+			if (ep_send_frames(&ep, iov, iovcnt, datasize) < 0)
+				exit(EXIT_FAILURE);
+			free_iov(iov, iovcnt, 0);
+			/* actually needed only once */
+			incremental = 1;
+		}
+		usleep(15 * 1000ULL);
 	}
 
 	return 0;
