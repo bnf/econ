@@ -614,7 +614,7 @@ err:
 }
 
 static int
-rfb_init(struct ep *ep)
+rfb_init(struct ep *ep, const char *vnc_server_ip, const char *vnc_server_port)
 {
 	char client_protocol[12];
 	const char *rfb_protocol = "RFB 003.008\n";
@@ -635,13 +635,21 @@ rfb_init(struct ep *ep)
 	} init;
 	ssize_t len;
 
-	ep->vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
-	if (ep->vnc_mfd < 0)
-		return -1;
+	if (vnc_server_ip) {
+		ep->vnc_mfd = -1;
+		ep->vnc_fd = connect_to_host(SOCK_STREAM,
+					     vnc_server_ip, vnc_server_port);
+		if (ep->vnc_fd < 0)
+			return -1;
+	} else {
+		ep->vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
+		if (ep->vnc_mfd < 0)
+			return -1;
 
-	ep->vnc_fd = accept(ep->vnc_mfd, NULL, NULL);
-	if (ep->vnc_fd < 0)
-		return -1;
+		ep->vnc_fd = accept(ep->vnc_mfd, NULL, NULL);
+		if (ep->vnc_fd < 0)
+			return -1;
+	}
 
 	read(ep->vnc_fd, client_protocol, sizeof client_protocol);
 
@@ -748,16 +756,34 @@ main(int argc, char *argv[])
 {
 	struct ep ep;
 	const char *beamer;
+	const char *vnc_server_ip = NULL, *vnc_server_port = "5900";
 	int incremental = 0;
+	int ch;
 
 	memset(&ep, 0, sizeof ep);
 
-	if (argc < 2)
+	opterr = 0;
+	while ((ch = getopt(argc, argv, "v:p:")) != -1) {
+		switch (ch) {
+		case 'v':
+			vnc_server_ip = optarg;
+			break;
+		case 'p':
+			vnc_server_port = optarg;
+			break;
+		default:
+			exit(EXIT_FAILURE);
+		}
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1)
 		exit(EXIT_FAILURE);
 
-	beamer = argv[1];
-
-	if (rfb_init(&ep) < 0)
+	beamer = argv[0];
+	
+	if (rfb_init(&ep, vnc_server_ip, vnc_server_port) < 0)
 		exit(EXIT_FAILURE);
 
 	if (econ_init(&ep, beamer) < 0)
