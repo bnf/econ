@@ -564,6 +564,25 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		}
 			break;
 #endif
+#if 1
+		case 2: /* RRE */
+		{
+			uint32_t subrects;
+			if (read(ep->vnc_fd, &subrects, sizeof subrects) < 0)
+				goto err;
+
+			subrects = ntohl(subrects);
+			offset = sizeof subrects;
+
+			size = offset + 4 + subrects * (4 + 8);
+			data = malloc(size);
+			if (data == NULL)
+				goto err;
+
+			*((uint32_t *) data) = htonl(subrects);
+		}
+			break;
+#endif
 		default:
 			goto err;
 		}
@@ -685,13 +704,13 @@ rfb_init(struct ep *ep)
 		uint8_t cmd;
 		uint8_t padding;
 		uint16_t number_of_encodings;
-		uint32_t encodings[4];
+		uint32_t encodings[5];
 	} cmd_set_encodings = {
-		2, 0, htons(4),
+		2, 0, htons(5),
 #if 0
-		{ htonl(0) /* RAW */, htonl(7) /* Tight */, htonl(6) /* Zlib */, htonl(16) /* ZRLE */ }
+		{ htonl(0) /* RAW */, htonl(7) /* Tight */, htonl(6) /* Zlib */, htonl(16) /* ZRLE */, htonl(2) /* RRE */ }
 #else
-		{ htonl(6) /* Zlib */, htonl(7) /* Tight */, htonl(16) /* ZRLE */, htonl(0) /* RAW */ }
+		{ htonl(6) /* Zlib */, htonl(2) /* RRE */, htonl(7) /* Tight */, htonl(16) /* ZRLE */, htonl(0) /* RAW */ }
 #endif
 	};
 
