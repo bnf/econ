@@ -484,19 +484,63 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		if (ntohs(frame->width) == 0 || ntohs(frame->height) == 0)
 			goto err;
 		
-		switch (ntohs(frame->encoding)) {
-		case 0:
+		switch (ntohl(frame->encoding)) {
+		case 0: /* RAW */
 			size = (ntohs(frame->width) * ntohs(frame->height)) * 32/8;
+			data = malloc(size);
+			if (data == NULL)
+				goto err;
 			break;
+#if 0
+		/* FIXME: doesnt work yet */
+		case 7: /* TIGHT */
+		{
+			uint8_t compression_control;
+			uint8_t compact_len[3];
+			const size_t bs = sizeof(uint8_t);
+			uint8_t count = 1;
+			uint32_t len;
+
+			read(ep->vnc_fd, &compression_control,
+			     sizeof compression_control);
+			printf("compression control: %x\n", compression_control);
+#if 0
+			/* jpeg compression has 0x90, others we cannot handle */
+			if (!(compression_control & 0x90))
+				goto err;
+#endif
+
+			read(ep->vnc_fd, &compact_len[0], bs);
+			len = compact_len[0] & 0x7F;
+			if (compact_len[0] & 0x80) {
+				read(ep->vnc_fd, &compact_len[1], bs);
+				len |= (compact_len[1] & 0x7F) << 7;
+				count = 2;
+				if (compact_len[1] & 0x80) {
+					read(ep->vnc_fd, &compact_len[2], bs);
+					len |= (compact_len[2] & 0xFF) << 14;
+					count = 3;
+				}
+			}
+			size = (sizeof compression_control +
+				count * sizeof(compact_len[0]) +
+				len);
+			data = malloc(size);
+			if (data == NULL)
+				goto err;
+			data[0] = compression_control;
+			memcpy(&data[1], compact_len,
+			       count * sizeof(compact_len[0]));
+
+		}
+			break;
+#endif
 		default:
 			goto err;
 		}
 
 		printf("size for %dx%d: %zd\n",
 		       ntohs(frame->width), ntohs(frame->height), size);
-		data = malloc(size);
-		if (data == NULL)
-			goto err;
 
 		iov[i*2+1].iov_base = data;
 		iov[i*2+1].iov_len = size;
