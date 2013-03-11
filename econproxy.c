@@ -61,9 +61,12 @@ struct rfb_framebuffer_update {
 };
 
 struct rfb_frame {
-	uint16_t x, y, w, h;
+	uint16_t x, y;
+	uint16_t width, height;
 	int32_t encoding;
+#if 0
 	uint8_t data[0];
+#endif
 };
 
 static void
@@ -359,8 +362,7 @@ ep_read_ack(struct ep *ep)
 }
 
 static int
-ep_send_frame(struct ep *ep, struct rfb_framebuffer_update *fbu,
-	      char *buf, int size)
+ep_send_frames(struct ep *ep, struct iovec *iov, int iovcnt, uint32_t datasize)
 {
 	struct econ_header hdr;
 	memset(&hdr, 0, sizeof hdr);
@@ -370,15 +372,10 @@ ep_send_frame(struct ep *ep, struct rfb_framebuffer_update *fbu,
 	set_ip(hdr.IPaddress, sock_get_ipv4_addr(ep->video_fd));
 
 	hdr.commandID = 0;
-	hdr.datasize = sizeof *fbu + size;
+	hdr.datasize = datasize;
 
 	write(ep->video_fd, (void *) &hdr, sizeof hdr);
-
-	ep->iov[0].iov_base = fbu;
-	ep->iov[0].iov_len = sizeof *fbu;
-	ep->iov[1].iov_base = buf;
-	ep->iov[1].iov_len = size;
-	writev(ep->video_fd, ep->iov, 2);
+	writev(ep->video_fd, iov, iovcnt);
 
 	return 0;
 }
@@ -428,75 +425,121 @@ rfb_framebuffer_update_request(struct ep *ep, int incremental)
 		     sizeof framebuffer_update_request);
 }
 
-static int
-rfb_retreive_framebuffer_update(struct ep *ep)
+static void
+free_iov(struct iovec *iov, int iovcnt, int members_only)
 {
-	struct rfb_framebuffer_update framebuffer_update;
+	int i;
+
+	for (i = 0; i < iovcnt; ++i)
+		free(iov[i].iov_base);
+	if (!members_only)
+		free(iov);
+}
+
+static int
+rfb_retrieve_framebuffer_update(struct ep *ep,
+				struct iovec **piov, int *iovcnt,
+				uint32_t *psize)
+{
+	struct rfb_framebuffer_update *framebuffer_update;
 	int i;
 	struct iovec *iov;
+	ssize_t len;
+	uint32_t datasize = 0;
 
-	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
-
-	printf("read framebuffer update?: %d\n", len);
-
-	if (framebuffer_update.nrects == 0) {
-		fprintf(stderr, "error: invalid number of rects\n");
+	framebuffer_update = malloc(sizeof *framebuffer_update);
+	if (framebuffer_update == NULL)
+		return -1;
+	len = read(ep->vnc_fd, framebuffer_update, sizeof *framebuffer_update);
+	if (len < 0) {
+		free(framebuffer_update);
 		return -1;
 	}
 
-	iov = malloc(2 * framebuffer_update.nrects * sizeof *iov);
-	if (iov == NULL)
-		return -1;
+	printf("read framebuffer update?: %zd\n", len);
 
-	for (i = 0; i < framebuffer_update.nrects; ++i) {
-		struct rfb_frame *frame = malloc(sizeof *frame);
+	/* The Epson Beamer Protocol also stores it in host order,
+	 * so make this permanent. */
+	framebuffer_update->nrects = ntohs(framebuffer_update->nrects);
+
+	if (framebuffer_update->nrects == 0) {
+		fprintf(stderr, "error: invalid number of rects\n");
+		free(framebuffer_update);
+		return -1;
+	}
+
+	iov = calloc(1 + 2 * framebuffer_update->nrects, sizeof *iov);
+	if (iov == NULL) {
+		free(framebuffer_update);
+		return -1;
+	}
+
+	iov[0].iov_base = framebuffer_update;
+	iov[0].iov_len = sizeof *framebuffer_update;
+	datasize += sizeof *framebuffer_update;
+	iov++;
+
+	for (i = 0; i < framebuffer_update->nrects; ++i) {
 		char *data;
 		size_t size;
+		struct rfb_frame *frame = malloc(sizeof *frame);
 
-		if (frame == NULL) {
-			/* FIXME: Free previous */
-			return -1;
-		}
+		if (frame == NULL)
+			goto err;
 
 		iov[i*2+0].iov_base = frame;
 		iov[i*2+0].iov_len = sizeof *frame;
+		datasize += sizeof *frame;
 
-		readv(ep->vnc_fd, iov[i*2+0], 1);
+		readv(ep->vnc_fd, &iov[i*2+0], 1);
 
+		if (ntohs(frame->width) == 0 || ntohs(frame->height) == 0)
+			goto err;
 		
-		switch (frame->encoding) {
+		switch (ntohs(frame->encoding)) {
 		case 0:
-			size = (frame->width - frame->x) * (frame->height - frame->y) * 32/8;
+			size = (ntohs(frame->width) * ntohs(frame->height)) * 32/8;
 			break;
 		default:
-			return -1;
+			goto err;
 		}
 
+		printf("size for %dx%d: %zd\n",
+		       ntohs(frame->width), ntohs(frame->height), size);
 		data = malloc(size);
 		if (data == NULL)
-			return -1;
+			goto err;
 
 		iov[i*2+1].iov_base = data;
 		iov[i*2+1].iov_len = size;
+		datasize += size;
+
+		len = loop_read(ep->vnc_fd, data, size, 0);
+		if (len < 0 || len != size)
+			goto err;
+
 	}
 
-	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
-	printf("cmd: %d, nrects: %d\n", framebuffer_update.cmd,
-	       ntohs(framebuffer_update.nrects));
+	iov--;
+	*piov = iov;
+	*iovcnt = 1 + i * 2;
+	*psize = datasize;
 
-	size_t bufsiz = (framebuffer_update.nrects *
-			 (sizeof(struct rfb_frame) +
-			  1024 * 768 * init.msg.format.bitsPerPixel/8));
-	char *buf = malloc(bufsiz);
-	assert(buf != NULL);
+	return 0;
 
-	len = loop_read(ep.vnc_fd, buf, bufsiz, 0);
-	printf("read framebuffer update data?: %d\n", len);
+err:
+	{
+		int n = 1 + framebuffer_update->nrects * 2;
 
-	struct rfb_frame *rect = (void *) buf;
-	printf("x: %d, y: %d, w: %d, h: %d, encoding: %d\n",
-	       ntohs(rect->x), ntohs(rect->y),
-	       ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
+		iov--;
+		for (i = 0; i < n; ++i) {
+			if (iov[n].iov_base == NULL)
+				break;
+			free(iov[i].iov_base);
+		}
+		free(iov);
+	}
+	return -1;
 }
 
 int
@@ -605,32 +648,18 @@ main(int argc, char *argv[])
 
 	rfb_framebuffer_update_request(&ep, 0);
 
-	struct rfb_framebuffer_update framebuffer_update;
-	len = read(ep.vnc_fd, &framebuffer_update, sizeof framebuffer_update);
-	printf("read framebuffer update?: %d\n", len);
+	struct iovec *iov;
+	int iovcnt;
+	uint32_t datasize;
 
-	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
-	printf("cmd: %d, nrects: %d\n", framebuffer_update.cmd,
-	       ntohs(framebuffer_update.nrects));
+	if (rfb_retrieve_framebuffer_update(&ep, &iov, &iovcnt, &datasize) < 0)
+		exit(EXIT_FAILURE);
 
-	size_t bufsiz = (framebuffer_update.nrects *
-			 (sizeof(struct rfb_frame) +
-			  1024 * 768 * init.msg.format.bitsPerPixel/8));
-	char *buf = malloc(bufsiz);
-	assert(buf != NULL);
-
-	len = loop_read(ep.vnc_fd, buf, bufsiz, 0);
-	printf("read framebuffer update data?: %d\n", len);
-
-	struct rfb_frame *rect = (void *) buf;
-	printf("x: %d, y: %d, w: %d, h: %d, encoding: %d\n",
-	       ntohs(rect->x), ntohs(rect->y),
-	       ntohs(rect->w), ntohs(rect->h), ntohl(rect->encoding));
-
+#if 1
 	FILE *img = fopen("/tmp/out.ppm", "w");
-	write_ppm(img, 1024, 768, 4, rect->data);
+	write_ppm(img, 1024, 768, 4, iov[2].iov_base);
 	fclose(img);
-
+#endif
 
 	if (create_beamer_sockets(&ep, beamer) < 0)
 		exit(EXIT_FAILURE);
@@ -649,9 +678,10 @@ main(int argc, char *argv[])
 	if (ep_read_ack(&ep) < 0)
 		exit(EXIT_FAILURE);
 
-	framebuffer_update.nrects = ntohs(framebuffer_update.nrects);
-	if (ep_send_frame(&ep, &framebuffer_update, buf, bufsiz) < 0)
+	if (ep_send_frames(&ep, iov, iovcnt, datasize) < 0)
 		exit(EXIT_FAILURE);
+
+	free_iov(iov, iovcnt, 0);
 
 	while (1) {
 		ep_keepalive(&ep);
