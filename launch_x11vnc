@@ -6,3 +6,6 @@
 
 export X11VNC_REVERSE_CONNECTION_NO_AUTH=1
 exec x11vnc -coe localhost -rfbport 0 -nopw -nocursor -nosel -viewonly -deferupdate none -norc "$@" -geometry 1024x768
+
+# Alternatively start in listen mode: and use econproxy -v localhost
+#exec x11vnc -nopw -nocursor -nosel -viewonly -deferupdate none -norc "$@" -geometry 1024x768
