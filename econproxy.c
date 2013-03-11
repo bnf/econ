@@ -490,6 +490,7 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		if (ntohs(frame->width) == 0 || ntohs(frame->height) == 0)
 			goto err;
 		
+		printf("encoding: %u\n", ntohl(frame->encoding));
 		switch (ntohl(frame->encoding)) {
 		case 0: /* RAW */
 			size = (ntohs(frame->width) * ntohs(frame->height)) * 32/8;
