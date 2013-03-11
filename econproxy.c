@@ -739,7 +739,7 @@ main(int argc, char *argv[])
 			/* actually needed only once */
 			incremental = 1;
 		}
-		usleep(15 * 1000ULL);
+		/*usleep(15 * 1000ULL);*/
 	}
 
 	return 0;
