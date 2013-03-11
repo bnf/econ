@@ -227,7 +227,7 @@ handle_input(struct ecs *ecs, char *in, int fd,
 			in.sin_addr.s_addr = ((struct sockaddr_in *) src_addr)->sin_addr.s_addr;
 			printf("got connect request\n");
 			if (connect(ecs->client_fd, (struct sockaddr *) &in, sizeof in) != 0) {
-				fprintf(stderr, "failed to connect: %m\n");
+				fprintf(stderr, "failed to connect: %s\n", strerror(errno));
 				close(ecs->client_fd);
 				ecs->client_fd = -1;
 				ecs->state = E_PSTAT_NOUSE;
@@ -378,7 +378,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (select(maxfd + 1, &fds, NULL, NULL, NULL) <= 0) {
-			fprintf(stderr, "select failed: %m");
+			fprintf(stderr, "select failed: %s", strerror(errno));
 			continue;
 		}
 

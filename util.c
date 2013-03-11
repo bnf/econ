@@ -52,7 +52,7 @@ sock_get_ifreq(int fd)
 	static struct ifreq ifreqs[16];
 	struct sockaddr_in *sin;
 	uint32_t own_ip;
-	int i;
+	unsigned int i;
 
 	own_ip = sock_get_ipv4_addr(fd);
 

@@ -122,13 +122,15 @@ econ_send_packet(struct ep *ep)
 static int
 econ_read_packet(struct ep *ep)
 {
-	ssize_t len;
+	ssize_t r;
+	size_t len;
 
 	init_iov(ep);
 
-	len = readv(ep->ec_fd, ep->iov, 3);
-	if (len < 0)
+	r = readv(ep->ec_fd, ep->iov, 3);
+	if (r < 0)
 		return -1;
+	len = (size_t) r;
 
 	if (len < sizeof(struct econ_header)) {
 		fprintf(stderr, "econ_read_packet: error: incomplete header\n");
@@ -551,7 +553,7 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		datasize += size;
 
 		len = loop_read(ep->vnc_fd, data, size, 0);
-		if (len < 0 || len != size)
+		if (len < 0 || (size_t) len != size)
 			goto err;
 
 	}
@@ -585,7 +587,9 @@ rfb_init(struct ep *ep)
 		rfbServerInitMsg msg;
 		struct {
 			rfbServerInitMsg msg;
+#if 0
 			char name[0];
+#endif
 		} d;
 		char buf[BUFSIZ];
 	} init;
