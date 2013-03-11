@@ -206,9 +206,13 @@ handle_input(struct ecs *ecs, char *in, int fd,
 		       rcmd->command.reqconnect.vnesInitMsg.framebufferWidth,
 		       rcmd->command.reqconnect.vnesInitMsg.framebufferHeight);
 
-		//sendmsg(fd, &msg, 0);
+#if 0
+		sendmsg(fd, &msg, 0);
+#endif
 
-		//ecs->ehdr.commandID = E_CMD_KEEPALIVE;
+#if 0
+		ecs->ehdr.commandID = E_CMD_KEEPALIVE;
+#endif
 
 		if (addrlen > 0) {
 			if (ecs->client_fd >= 0)
