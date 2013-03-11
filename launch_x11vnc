@@ -5,4 +5,4 @@
 # ./launch_x11vnc -clip xinerama1
 
 export X11VNC_REVERSE_CONNECTION_NO_AUTH=1
-exec x11vnc -coe localhost -rfbport 0 -nopw -nocursor -nosel -viewonly -deferupdate none "$@" -geometry 1024x768
+exec x11vnc -coe localhost -rfbport 0 -nopw -nocursor -nosel -viewonly -deferupdate none -norc "$@" -geometry 1024x768
