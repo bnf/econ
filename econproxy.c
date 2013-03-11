@@ -446,6 +446,7 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 	/* The Epson Beamer Protocol also stores it in host order,
 	 * so make this permanent. */
 	framebuffer_update->nrects = ntohs(framebuffer_update->nrects);
+	printf("nrects: %d\n", framebuffer_update->nrects);
 
 	if (framebuffer_update->nrects == 0) {
 		fprintf(stderr, "error: invalid number of rects\n");
@@ -467,6 +468,7 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 	for (i = 0; i < framebuffer_update->nrects; ++i) {
 		char *data;
 		size_t size;
+		ssize_t r;
 		struct rfb_frame *frame = malloc(sizeof *frame);
 
 		if (frame == NULL)
@@ -476,7 +478,8 @@ rfb_retrieve_framebuffer_update(struct ep *ep,
 		iov[i*2+0].iov_len = sizeof *frame;
 		datasize += sizeof *frame;
 
-		readv(ep->vnc_fd, &iov[i*2+0], 1);
+		r = readv(ep->vnc_fd, &iov[i*2+0], 1);
+		printf("r: %zd\n", r);
 
 		if (ntohs(frame->width) == 0 || ntohs(frame->height) == 0)
 			goto err;
