@@ -589,7 +589,7 @@ rfb_init(struct ep *ep)
 		} d;
 		char buf[BUFSIZ];
 	} init;
-	size_t len;
+	ssize_t len;
 
 	ep->vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
 	if (ep->vnc_mfd < 0)
