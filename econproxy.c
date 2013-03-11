@@ -172,21 +172,6 @@ read_packet(struct ep *ep)
 	return 0;
 }
 
-static void
-write_ppm(FILE *img, int width, int height, int bpp, uint8_t *buf)
-{
-	int i;
-
-	fprintf(img, "P6\n");
-	fprintf(img, "%d %d\n255\n", width, height);
-
-	for (i = 0; i < width * height; ++i) {
-		fwrite(&buf[i*bpp+2], 1, 1, img);
-		fwrite(&buf[i*bpp+1], 1, 1, img);
-		fwrite(&buf[i*bpp+0], 1, 1, img);
-	}
-}
-
 static int
 ep_keepalive(struct ep *ep)
 {
@@ -656,12 +641,6 @@ main(int argc, char *argv[])
 
 	if (rfb_retrieve_framebuffer_update(&ep, &iov, &iovcnt, &datasize) < 0)
 		exit(EXIT_FAILURE);
-
-#if 1
-	FILE *img = fopen("/tmp/out.ppm", "w");
-	write_ppm(img, 1024, 768, 4, iov[2].iov_base);
-	fclose(img);
-#endif
 
 	if (create_beamer_sockets(&ep, beamer) < 0)
 		exit(EXIT_FAILURE);
