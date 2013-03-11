@@ -52,6 +52,7 @@ struct ep {
 	struct econ_record erec;
 
 	uint8_t projUniqInfo[ECON_UNIQINFO_LENGTH];	
+	rfbServerInitMsg vnesInitMsg;
 };
 
 struct rfb_framebuffer_update {
@@ -576,54 +577,16 @@ err:
 	return -1;
 }
 
-int
-main(int argc, char *argv[])
+static int
+rfb_init(struct ep *ep)
 {
-	struct ep ep;
-	int len;
-	const char *beamer;
-	int incremental = 0;
-
-	memset(&ep, 0, sizeof ep);
-
-	if (argc < 2)
-		exit(EXIT_FAILURE);
-
-	beamer = argv[1];
-
-	ep.vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
-	if (ep.vnc_mfd < 0)
-		exit(EXIT_FAILURE);
-
-	ep.vnc_fd = accept(ep.vnc_mfd, NULL, NULL);
-	if (ep.vnc_fd < 0)
-		exit(EXIT_FAILURE);
-
 	char client_protocol[12];
-	read(ep.vnc_fd, client_protocol, sizeof client_protocol);
-
 	const char *rfb_protocol = "RFB 003.008\n";
-	write(ep.vnc_fd, rfb_protocol, strlen(rfb_protocol));
-
 	char security_types[BUFSIZ];
-	len = read(ep.vnc_fd, security_types, BUFSIZ);
-	printf("security_types: %d\n", len);
-
 #define NOAUTH 1
 	uint8_t auth = NOAUTH;
-	write(ep.vnc_fd, &auth, sizeof auth);
-
 	uint32_t auth_result = 0;
-
-	len = read(ep.vnc_fd, &auth_result, sizeof auth_result);
-	if (auth_result != 0) {
-		fprintf(stderr, "auth failed: %d, %d\n", auth_result, len);
-		exit(EXIT_FAILURE);
-	}
-
 	uint8_t share_desktop = 1;
-	write(ep.vnc_fd, &share_desktop, sizeof share_desktop);
-	
 	union init {
 		rfbServerInitMsg msg;
 		struct {
@@ -631,11 +594,42 @@ main(int argc, char *argv[])
 			char name[0];
 		} d;
 		char buf[BUFSIZ];
-	};
-	union init init;
+	} init;
+	size_t len;
 
-	len = read(ep.vnc_fd, &init, sizeof init);
-	printf("read init: %d\n", len);
+	ep->vnc_mfd = bind_socket(SOCK_STREAM, "localhost", "5500");
+	if (ep->vnc_mfd < 0)
+		return -1;
+
+	ep->vnc_fd = accept(ep->vnc_mfd, NULL, NULL);
+	if (ep->vnc_fd < 0)
+		return -1;
+
+	read(ep->vnc_fd, client_protocol, sizeof client_protocol);
+
+	write(ep->vnc_fd, rfb_protocol, strlen(rfb_protocol));
+
+	len = read(ep->vnc_fd, security_types, BUFSIZ);
+	printf("security_types: %zd\n", len);
+
+	if (write(ep->vnc_fd, &auth, sizeof auth) < 0)
+		return -1;
+
+	len = read(ep->vnc_fd, &auth_result, sizeof auth_result);
+	if (len < 0)
+		return -1;
+	if (auth_result != 0) {
+		fprintf(stderr, "auth failed: %d, %zd\n", auth_result, len);
+		return -1;
+	}
+
+	if (write(ep->vnc_fd, &share_desktop, sizeof share_desktop) < 0)
+		return -1;
+	
+	len = read(ep->vnc_fd, &init, sizeof init);
+	printf("read init: %zd\n", len);
+	if (len < 0)
+		return -1;
 
 	printf("w: %hu, h: %hu\n",
 	       ntohs(init.msg.framebufferWidth),
@@ -658,12 +652,13 @@ main(int argc, char *argv[])
 		uint16_t padding2;
 	} cmd_set_pixel_format = { 0, 0, 0 };
 
-	ep.iov[0].iov_base = &cmd_set_pixel_format;
-	ep.iov[0].iov_len = sizeof cmd_set_pixel_format;
-	ep.iov[1].iov_base = &init.msg.format;
-	ep.iov[1].iov_len = sizeof init.msg.format;
+	ep->iov[0].iov_base = &cmd_set_pixel_format;
+	ep->iov[0].iov_len = sizeof cmd_set_pixel_format;
+	ep->iov[1].iov_base = &init.msg.format;
+	ep->iov[1].iov_len = sizeof init.msg.format;
 
-	writev(ep.vnc_fd, ep.iov, 2);
+	if (writev(ep->vnc_fd, ep->iov, 2) < 0)
+		return -1;
 
 	struct {
 		uint8_t cmd;
@@ -679,7 +674,30 @@ main(int argc, char *argv[])
 #endif
 	};
 
-	write(ep.vnc_fd, &cmd_set_encodings, sizeof cmd_set_encodings);
+	if (write(ep->vnc_fd, &cmd_set_encodings, sizeof cmd_set_encodings) < 0)
+		return -1;
+
+	ep->vnesInitMsg = init.msg;
+
+	return 0;
+}
+
+int
+main(int argc, char *argv[])
+{
+	struct ep ep;
+	const char *beamer;
+	int incremental = 0;
+
+	memset(&ep, 0, sizeof ep);
+
+	if (argc < 2)
+		exit(EXIT_FAILURE);
+
+	beamer = argv[1];
+
+	if (rfb_init(&ep) < 0)
+		exit(EXIT_FAILURE);
 
 	if (create_beamer_sockets(&ep, beamer) < 0)
 		exit(EXIT_FAILURE);
@@ -687,7 +705,7 @@ main(int argc, char *argv[])
 	if (ep_get_clientinfo(&ep) < 0)
 		exit(EXIT_FAILURE);
 
-	if (ep_reqconnect(&ep, &init.msg) < 0)
+	if (ep_reqconnect(&ep, &ep.vnesInitMsg) < 0)
 		exit(EXIT_FAILURE);
 
 	if (create_data_sockets(&ep, beamer) < 0)
