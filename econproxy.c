@@ -34,6 +34,7 @@
 #endif
 
 #include "econproto.h"
+#include "econpacket.h"
 #include "util.h"
 
 struct ep {
@@ -47,9 +48,7 @@ struct ep {
 	int audio_fd;
 
 	struct iovec iov[3];
-	struct econ_header ehdr;
-	struct econ_command ecmd;
-	struct econ_record erec;
+	struct econ_packet epkt;
 
 	uint8_t projUniqInfo[ECON_UNIQINFO_LENGTH];	
 	rfbServerInitMsg vnesInitMsg;
@@ -70,114 +69,19 @@ struct rfb_frame {
 #endif
 };
 
-static void
-init_header(struct econ_header *ehdr, int commandID)
-{
-	memset(ehdr, 0, sizeof *ehdr);
-
-	strncpy(ehdr->magicnum, ECON_MAGIC_NUMBER,  ECON_MAGICNUM_SIZE);
-	strncpy(ehdr->version,  ECON_PROTO_VERSION, ECON_PROTOVER_MAXLEN);
-
-	ehdr->datasize = 0;
-	ehdr->commandID = commandID;
-}
-
-static void
-init_iov(struct ep *ep)
-{
-	ep->iov[0].iov_base = &ep->ehdr;
-	ep->iov[0].iov_len = sizeof ep->ehdr;
-	ep->iov[1].iov_base = &ep->ecmd;
-	ep->iov[1].iov_len = sizeof ep->ecmd;
-	ep->iov[2].iov_base = &ep->erec;
-	ep->iov[2].iov_len = sizeof ep->erec;
-}
 
 static void
 init_packet(struct ep *ep, int commandID)
 {
-	init_iov(ep);
-
-	memset(&ep->erec, 0, sizeof ep->erec);
-	memset(&ep->ecmd, 0, sizeof ep->ecmd);
-	init_header(&ep->ehdr, commandID);
-
-	set_ip(ep->ehdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
-}
-
-static int
-econ_send_packet(struct ep *ep)
-{
-	int i = 1;
-
-	if (ep->ehdr.datasize > 0) {
-		i++;
-		if (ep->ecmd.recordCount == 1)
-			i++;
-	}
-
-	return writev(ep->ec_fd, ep->iov, i);
-}
-
-static int
-econ_read_packet(struct ep *ep)
-{
-	union { ssize_t s; size_t u; } len;
-
-	init_iov(ep);
-
-	len.s = readv(ep->ec_fd, ep->iov, 3);
-	if (len.s < 0)
-		return -1;
-
-	if (len.u < sizeof(struct econ_header)) {
-		fprintf(stderr, "econ_read_packet: error: incomplete header\n");
-		return -1;
-	}
-
-	if (len.u < sizeof(struct econ_header) + ep->ehdr.datasize) {
-		fprintf(stderr, "packet has invalid datasize\n");
-		return -1;
-	}
-
-	if (ep->ehdr.datasize > 0) {
-		if (ep->ehdr.datasize < sizeof(struct econ_command)) {
-			fprintf(stderr,
-				"econ_read_packet: error: command to short\n");
-			return -1;
-		}
-
-		/* Keepalive is an irregular if datasize > 0:
-		 *  the regular field recordCount is 1,
-		 *  without actually having one. */
-		if (ep->ehdr.commandID == E_CMD_KEEPALIVE)
-			return 0;
-
-		if (ep->ecmd.recordCount > 0) {
-			if (ep->ecmd.recordCount > 1) {
-				fprintf(stderr, "econ_read_packet:"
-					" did not expect a packet with more"
-					" that one record: %d, datasize: %d.\n",
-					ep->ecmd.recordCount, ep->ehdr.datasize);
-				return -1;
-			}
-			if (ep->ehdr.datasize != (sizeof (struct econ_command) +
-						  sizeof (struct econ_record))) {
-				fprintf(stderr, "econ_read_packet: datasize incorrect, cmd: %d\n",
-					ep->ehdr.commandID);
-				return -1;
-			}
-		}
-	}
-
-	return 0;
+	epkt_init(&ep->epkt, commandID);
+	set_ip(ep->epkt.hdr.IPaddress, sock_get_ipv4_addr(ep->ec_fd));
 }
 
 static int
 ep_keepalive(struct ep *ep)
 {
 	init_packet(ep, E_CMD_KEEPALIVE);
-	if (econ_send_packet(ep) < 0)
+	if (epkt_send(ep->ec_fd, &ep->epkt) < 0)
 		return -1;
 
 	return 0;
@@ -187,25 +91,25 @@ static int
 ep_get_clientinfo(struct ep *ep)
 {
 	init_packet(ep, E_CMD_IPSEARCH);
-	econ_send_packet(ep);
+	epkt_send(ep->ec_fd, &ep->epkt);
 
-	if (econ_read_packet(ep) < 0)
+	if (epkt_read(ep->ec_fd, &ep->epkt) < 0)
 		return -1;
-	if (ep->ehdr.commandID != E_CMD_CLIENTINFO) {
+	if (ep->epkt.hdr.commandID != E_CMD_CLIENTINFO) {
 		fprintf(stderr, "expected clientinfo, got: %d\n",
-			ep->ehdr.commandID);
+			ep->epkt.hdr.commandID);
 		return -1;
 	}
 
-	if (ep->ehdr.datasize == 0 || ep->ecmd.recordCount == 0) {
+	if (ep->epkt.hdr.datasize == 0 || ep->epkt.cmd.recordCount == 0) {
 		fprintf(stderr, "missing record in clientinfo\n");
 		return -1;
 	}
 
 	printf("clientinfo unknown value: %hu\n",
-	       ep->ecmd.command.clientinfo.unknown_field_1);
+	       ep->epkt.cmd.command.clientinfo.unknown_field_1);
 	/* cache projUniqInfo needed for reqconnect */
-	memcpy(ep->projUniqInfo, ep->erec.projUniqInfo, ECON_UNIQINFO_LENGTH);
+	memcpy(ep->projUniqInfo, ep->epkt.rec.projUniqInfo, ECON_UNIQINFO_LENGTH);
 
 #if 1
 	char buf[BUFSIZ];
@@ -213,7 +117,7 @@ ep_get_clientinfo(struct ep *ep)
 	struct econ_header *hdr = (void *) buf;
 	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
 #if 0
-	if (econ_read_packet(ep) < 0)
+	if (epkt_read(ep->ec_fd, &ep->epkt) < 0)
 	    return -1;
 #endif
 
@@ -254,39 +158,39 @@ static int
 ep_reqconnect(struct ep *ep)
 {
 	init_packet(ep, E_CMD_REQCONNECT);
-	ep->ehdr.datasize = sizeof ep->ecmd + sizeof ep->erec;
+	ep->epkt.hdr.datasize = sizeof ep->epkt.cmd + sizeof ep->epkt.rec;
 
-	vnes_ntoh(&ep->vnesInitMsg, &ep->ecmd.command.reqconnect.vnesInitMsg);
+	vnes_ntoh(&ep->vnesInitMsg, &ep->epkt.cmd.command.reqconnect.vnesInitMsg);
 
-	set_ip(ep->ecmd.command.reqconnect.subnetMask,
+	set_ip(ep->epkt.cmd.command.reqconnect.subnetMask,
 	       sock_get_netmask(ep->ec_fd));
 #if 1
 	/* FIXME: need to set gateway address? */
-	ep->ecmd.command.reqconnect.gateAddress[0] = 192;
-	ep->ecmd.command.reqconnect.gateAddress[1] = 168;
-	ep->ecmd.command.reqconnect.gateAddress[2] = 1;
-	ep->ecmd.command.reqconnect.gateAddress[3] = 1;
+	ep->epkt.cmd.command.reqconnect.gateAddress[0] = 192;
+	ep->epkt.cmd.command.reqconnect.gateAddress[1] = 168;
+	ep->epkt.cmd.command.reqconnect.gateAddress[2] = 1;
+	ep->epkt.cmd.command.reqconnect.gateAddress[3] = 1;
 #endif
 
-	ep->ecmd.command.reqconnect.unknown_field_1 = 0x02;
-	ep->ecmd.command.reqconnect.unknown_field_2 = 0x01;
-	ep->ecmd.command.reqconnect.unknown_field_3 = 0x03;
+	ep->epkt.cmd.command.reqconnect.unknown_field_1 = 0x02;
+	ep->epkt.cmd.command.reqconnect.unknown_field_2 = 0x01;
+	ep->epkt.cmd.command.reqconnect.unknown_field_3 = 0x03;
 #if 0
-	memcpy(ep->ecmd.command.reqconnect.EncPassword, "82091965",
+	memcpy(ep->epkt.cmd.command.reqconnect.EncPassword, "82091965",
 	       ECON_ENCRYPTION_MAXLEN);
 #endif
 
-	ep->ecmd.recordCount = 1;
-	set_ip(ep->erec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
-	memcpy(ep->erec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
+	ep->epkt.cmd.recordCount = 1;
+	set_ip(ep->epkt.rec.IPaddress, sock_get_peer_ipv4_addr(ep->ec_fd));
+	memcpy(ep->epkt.rec.projUniqInfo, ep->projUniqInfo, ECON_UNIQINFO_LENGTH);
 
-	econ_send_packet(ep);
+	epkt_send(ep->ec_fd, &ep->epkt);
 
-	if (econ_read_packet(ep) < 0)
+	if (epkt_read(ep->ec_fd, &ep->epkt) < 0)
 		return -1;
-	if (ep->ehdr.commandID != E_CMD_CONNECTED) {
+	if (ep->epkt.hdr.commandID != E_CMD_CONNECTED) {
 		fprintf(stderr, "failed to connect: command was: %d\n",
-			ep->ehdr.commandID);
+			ep->epkt.hdr.commandID);
 		return -1;
 	}
 
@@ -312,10 +216,10 @@ create_data_sockets(struct ep *ep, const char *beamer)
 static int
 ep_read_ack(struct ep *ep)
 {
-	if (econ_read_packet(ep) < 0)
+	if (epkt_read(ep->ec_fd, &ep->epkt) < 0)
 		return -1;
 
-	switch (ep->ehdr.commandID) {
+	switch (ep->epkt.hdr.commandID) {
 	/* cack for connection video sockets */
 	case E_CMD_22:
 		break;
@@ -328,21 +232,21 @@ ep_read_ack(struct ep *ep)
 	default:
 		fprintf(stderr,
 			"unexpected cmd: %d while waiting for socket ack.\n",
-			ep->ehdr.commandID);
+			ep->epkt.hdr.commandID);
 		return -1;
 	}
 
-	if (ep->ehdr.datasize == 0) {
+	if (ep->epkt.hdr.datasize == 0) {
 		fprintf(stderr, "error: command 22 received is to short\n");
 		return -1;
 	}
 
 	init_packet(ep, E_CMD_25);
-	ep->ehdr.datasize = sizeof ep->ecmd;
-	ep->ecmd.command.cmd25.unknown_field1 = 1;
-	ep->ecmd.command.cmd25.unknown_field2 = 1;
+	ep->epkt.hdr.datasize = sizeof ep->epkt.cmd;
+	ep->epkt.cmd.command.cmd25.unknown_field1 = 1;
+	ep->epkt.cmd.command.cmd25.unknown_field2 = 1;
 
-	econ_send_packet(ep);
+	epkt_send(ep->ec_fd, &ep->epkt);
 
 	return 0;
 }

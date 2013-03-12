@@ -2,8 +2,8 @@ CFLAGS=-std=gnu99 -ggdb -Wall -Wstrict-prototypes -Wmissing-prototypes -Wunused-
 
 all: econproxy econserv
 
-%: %.c util.c util.h econproto.h
-	gcc $(CFLAGS) -o $@ $< util.c
+%: %.c util.c util.h econproto.h econpacket.h
+	gcc $(CFLAGS) -o $@ $< util.c econpacket.c
 
 clean:
 	rm -f econproxy econserv
