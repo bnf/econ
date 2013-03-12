@@ -20,8 +20,6 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <assert.h>
-#include <errno.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
