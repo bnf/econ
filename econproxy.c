@@ -45,7 +45,6 @@ struct ep {
 	int video_fd;
 	int audio_fd;
 
-	struct iovec iov[3];
 	struct econ_packet epkt;
 
 	uint8_t projUniqInfo[ECON_UNIQINFO_LENGTH];	
@@ -525,6 +524,7 @@ rfb_init(struct ep *ep, const char *vnc_server_ip, const char *vnc_server_port)
 	uint8_t auth = NOAUTH;
 	uint32_t auth_result = 0;
 	uint8_t share_desktop = 1;
+	struct iovec iov[2];
 	union init {
 		rfbServerInitMsg msg;
 		struct {
@@ -600,12 +600,12 @@ rfb_init(struct ep *ep, const char *vnc_server_ip, const char *vnc_server_port)
 		uint16_t padding2;
 	} cmd_set_pixel_format = { 0, 0, 0 };
 
-	ep->iov[0].iov_base = &cmd_set_pixel_format;
-	ep->iov[0].iov_len = sizeof cmd_set_pixel_format;
-	ep->iov[1].iov_base = &init.msg.format;
-	ep->iov[1].iov_len = sizeof init.msg.format;
+	iov[0].iov_base = &cmd_set_pixel_format;
+	iov[0].iov_len = sizeof cmd_set_pixel_format;
+	iov[1].iov_base = &init.msg.format;
+	iov[1].iov_len = sizeof init.msg.format;
 
-	if (writev(ep->vnc_fd, ep->iov, 2) < 0)
+	if (writev(ep->vnc_fd, iov, 2) < 0)
 		return -1;
 
 	struct {
