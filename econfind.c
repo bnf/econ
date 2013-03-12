@@ -51,7 +51,6 @@ main(int argc, char *argv[])
 	int cfd, sfd;
 	struct econ_packet pkt;
 	struct in_addr in;
-	const char *ip;
 
 	if (argc < 2)
 		exit(EXIT_FAILURE);
@@ -61,9 +60,7 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 
 	in.s_addr = sock_get_ipv4_addr(cfd);
-	ip = inet_ntoa(in);
-	fprintf(stderr, "own ip: %s\n", inet_ntoa(in));
-	sfd = bind_socket(SOCK_DGRAM, ip, STR(ECON_PORTNUMBER));
+	sfd = bind_socket(SOCK_DGRAM, inet_ntoa(in), STR(ECON_PORTNUMBER));
 
 	epkt_init(&pkt, E_CMD_EASYSEARCH);
 	if (epkt_send(cfd, &pkt) < 0)
