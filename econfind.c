@@ -70,6 +70,8 @@ main(int argc, char *argv[])
 		printf("\n");
 	}
 
+	close(cfd);
+	close(sfd);
+
 	return 0;
 }
-
