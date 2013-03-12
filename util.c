@@ -139,7 +139,7 @@ bind_socket(int socktype, const char *host, const char *port)
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = socktype;
 
-	printf("bind to host: %s, %s.port: %s\n",
+	fprintf(stderr, "bind to host: %s, %s.port: %s\n",
 	       host, socktype == SOCK_STREAM ? "tcp" : "udp", port);
 
 	s = getaddrinfo(host, port, &hints, &result);
@@ -187,7 +187,7 @@ connect_to_host(int socktype, const char *host, const char *port)
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = socktype;
 
-	printf("connect to host: %s, %s.port: %s\n",
+	fprintf(stderr, "connect to host: %s, %s.port: %s\n",
 	       host, socktype == SOCK_STREAM ? "tcp" : "udp", port);
 
 	s = getaddrinfo(host, port, &hints, &result);
