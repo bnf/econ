@@ -121,18 +121,6 @@ get_hwaddr(struct ecs *ecs)
 }
 
 static void
-init_header(struct econ_header *ehdr, int commandID)
-{
-	memset(ehdr, 0, sizeof *ehdr);
-
-	strncpy(ehdr->magicnum, ECON_MAGIC_NUMBER,  ECON_MAGICNUM_SIZE);
-	strncpy(ehdr->version,  ECON_PROTO_VERSION, ECON_PROTOVER_MAXLEN);
-
-	ehdr->datasize = 0;
-	ehdr->commandID = commandID;
-}
-
-static void
 handle_input(struct ecs *ecs, char *in, int fd,
 	     struct sockaddr *src_addr, socklen_t addrlen)
 {
@@ -304,17 +292,6 @@ recv_udp(struct ecs *ecs)
 			     (struct sockaddr *) &src_addr, addrlen);
 }
 
-static void
-init_iov(struct ecs *ecs)
-{
-	ecs->epkt.iov[0].iov_base = &ecs->epkt.hdr;
-	ecs->epkt.iov[0].iov_len = sizeof ecs->epkt.hdr;
-	ecs->epkt.iov[1].iov_base = &ecs->epkt.cmd;
-	ecs->epkt.iov[1].iov_len = sizeof ecs->epkt.cmd;
-	ecs->epkt.iov[2].iov_base = &ecs->epkt.rec;
-	ecs->epkt.iov[2].iov_len = sizeof ecs->epkt.rec;
-}
-
 int main(int argc, char *argv[])
 {
 	struct ecs ecs;
@@ -332,8 +309,7 @@ int main(int argc, char *argv[])
 	ecs.name = "benp";
 	ecs.client_fd =	ecs.client_fd_data[0] = ecs.client_fd_data[1] = -1;
 	ecs.state = E_PSTAT_NOUSE;
-	init_iov(&ecs);
-	init_header(&ecs.epkt.hdr, E_CMD_CLIENTINFO);
+	epkt_init(&ecs.epkt, E_CMD_CLIENTINFO);
 
 	ecs.fd = bind_socket(SOCK_STREAM, host, control_port);
 	assert(ecs.fd >= 0);
