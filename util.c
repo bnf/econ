@@ -59,8 +59,7 @@ sock_get_ifreq(int fd)
 	ifconf.ifc_len = sizeof ifreqs;
 	ifconf.ifc_req = ifreqs;
 	if (ioctl(fd, SIOCGIFCONF, &ifconf) < 0) {
-		fprintf(stderr, "retrieving interfaces failed: %s\n",
-			strerror(errno));
+		perror("Reading interface configuration failed");
 		return NULL;
 	}
 
@@ -203,8 +202,7 @@ connect_to_host(int socktype, const char *host, const char *port)
 			int broadcast_enable = 1;
 			if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST,
 				       &broadcast_enable, sizeof(broadcast_enable)) < 0)
-				fprintf(stderr, "Failed to setsockopt broadcast: %s\n",
-					strerror(errno));
+				perror("Failed to setsockopt broadcast");
 		}
 
 		if (connect(fd, rp->ai_addr, rp->ai_addrlen) != -1)
@@ -214,7 +212,7 @@ connect_to_host(int socktype, const char *host, const char *port)
 	}
 	freeaddrinfo(result);
 	if (rp == NULL) {
-		fprintf(stderr, "Failed to connect: %s\n", strerror(errno));
+		perror("Failed to connect");
 		return -1;
 	}
 
