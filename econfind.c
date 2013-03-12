@@ -46,9 +46,12 @@ connect_broadcast(const char *addr, int port)
 		return -1;
 	ret = setsockopt(fd, SOL_SOCKET, SO_BROADCAST,
 			 &broadcast_enable, sizeof(broadcast_enable));
-	if (ret < 0)
-		exit(EXIT_FAILURE);
-  
+	if (ret < 0) {
+		fprintf(stderr, "Failed to setsockopt broadcast: %s\n",
+			strerror(errno)),
+		close(fd);
+		return -1;
+	}
  
 	if (connect(fd, (struct sockaddr *) &s, sizeof s) < 0) {
 		fprintf(stderr, "Failed to connect: %s\n", strerror(errno));
@@ -69,7 +72,6 @@ main(int argc, char *argv[])
 
 	if (argc < 2)
 		exit(EXIT_FAILURE);
-
 
 	cfd = connect_broadcast(argv[1], ECON_PORTNUMBER);
 	if (cfd < 0)
