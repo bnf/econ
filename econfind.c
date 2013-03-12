@@ -17,8 +17,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <errno.h>
 
 #include <unistd.h>
 #include <sys/socket.h>
@@ -28,39 +26,6 @@
 #include "util.h"
 #include "econproto.h"
 #include "econpacket.h"
-
-static int
-connect_broadcast(const char *addr, int port)
-{
-	int fd, ret;
-	struct sockaddr_in s;
-	int broadcast_enable = 1;
-
-	memset(&s, 0, sizeof s);
-	s.sin_family = AF_INET;
-	s.sin_port = htons(port);
-	s.sin_addr.s_addr = inet_addr(addr);
-
-	fd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (fd == -1) 
-		return -1;
-	ret = setsockopt(fd, SOL_SOCKET, SO_BROADCAST,
-			 &broadcast_enable, sizeof(broadcast_enable));
-	if (ret < 0) {
-		fprintf(stderr, "Failed to setsockopt broadcast: %s\n",
-			strerror(errno)),
-		close(fd);
-		return -1;
-	}
- 
-	if (connect(fd, (struct sockaddr *) &s, sizeof s) < 0) {
-		fprintf(stderr, "Failed to connect: %s\n", strerror(errno));
-		close(fd);
-		return -1;
-	}
-
-	return fd;
-}
 
 int
 main(int argc, char *argv[])
@@ -73,7 +38,7 @@ main(int argc, char *argv[])
 	if (argc < 2)
 		exit(EXIT_FAILURE);
 
-	cfd = connect_broadcast(argv[1], ECON_PORTNUMBER);
+	cfd = connect_to_host(SOCK_DGRAM, argv[1], STR(ECON_PORTNUMBER));
 	if (cfd < 0)
 		exit(EXIT_FAILURE);
 

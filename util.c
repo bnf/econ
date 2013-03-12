@@ -199,6 +199,13 @@ connect_to_host(int socktype, const char *host, const char *port)
 		fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
 		if (fd == -1)
 			continue;
+		if (socktype == SOCK_DGRAM) {
+			int broadcast_enable = 1;
+			if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST,
+				       &broadcast_enable, sizeof(broadcast_enable)) < 0)
+				fprintf(stderr, "Failed to setsockopt broadcast: %s\n",
+					strerror(errno));
+		}
 
 		if (connect(fd, rp->ai_addr, rp->ai_addrlen) != -1)
 			break;
