@@ -205,7 +205,7 @@ connect_to_host(int socktype, const char *host, const char *port)
 	}
 	freeaddrinfo(result);
 	if (rp == NULL) {
-		fprintf(stderr, "Failed to bind: %s\n", strerror(errno));
+		fprintf(stderr, "Failed to connect: %s\n", strerror(errno));
 		return -1;
 	}
 
