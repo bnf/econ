@@ -27,6 +27,24 @@
 #include "econproto.h"
 #include "econpacket.h"
 
+static void
+parse_clientinfo(struct econ_packet *pkt)
+{
+	struct in_addr beamer;
+	
+	beamer.s_addr = *(uint32_t*)pkt->hdr.IPaddress;
+	printf("%s", inet_ntoa(beamer));
+	if (pkt->hdr.datasize > 0) {
+		char *name = pkt->cmd.command.clientinfo.projName;
+		int state = pkt->cmd.command.clientinfo.projState;
+
+		name[ECON_PROJNAME_MAXLEN-1] = '\0';
+		printf(" - %s: %s", name,
+		       state == E_PSTAT_NOUSE ? "no use" : "in use");
+	}
+	printf("\n");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -54,21 +72,8 @@ main(int argc, char *argv[])
 	if (epkt_read(sfd, &pkt) < 0)
 		exit(EXIT_FAILURE);
 
-	if (pkt.hdr.commandID == E_CMD_CLIENTINFO) {
-		struct in_addr beamer;
-		
-		beamer.s_addr = *(uint32_t*)pkt.hdr.IPaddress;
-		printf("%s", inet_ntoa(beamer));
-		if (pkt.hdr.datasize > 0) {
-			char *name = pkt.cmd.command.clientinfo.projName;
-			int state = pkt.cmd.command.clientinfo.projState;
-
-			name[ECON_PROJNAME_MAXLEN-1] = '\0';
-			printf(" - %s: %s", name,
-			       state == E_PSTAT_NOUSE ? "no use" : "in use");
-		}
-		printf("\n");
-	}
+	if (pkt.hdr.commandID == E_CMD_CLIENTINFO)
+		parse_clientinfo(&pkt);
 
 	close(cfd);
 	close(sfd);
