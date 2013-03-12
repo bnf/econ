@@ -37,6 +37,7 @@
 #include <netinet/in.h>
 
 #include "econproto.h"
+#include "econpacket.h"
 #include "util.h"
 
 struct e_cmd21 {
@@ -102,10 +103,7 @@ struct ecs {
 	unsigned char proj_uniq[ECON_UNIQINFO_LENGTH];
 	enum e_proj_state state;
 
-	struct iovec iov[3];
-	struct econ_header ehdr;
-	struct econ_command ecmd;
-	struct econ_record erec;
+	struct econ_packet epkt;
 	char *name;
 
 	int data_index;
@@ -144,29 +142,29 @@ handle_input(struct ecs *ecs, char *in, int fd,
 	memset(&msg, 0, sizeof msg);
 	msg.msg_name = src_addr;
 	msg.msg_namelen = addrlen;
-	msg.msg_iov = ecs->iov;
-	msg.msg_iovlen = ARRAY_SIZE(ecs->iov);
+	msg.msg_iov = ecs->epkt.iov;
+	msg.msg_iovlen = ARRAY_SIZE(ecs->epkt.iov);
 
 	switch (hdr->commandID) {
 	case E_CMD_EASYSEARCH:
 	case E_CMD_IPSEARCH:
-		memset(&ecs->ecmd, 0, sizeof ecs->ecmd);
-		ecs->ehdr.commandID = E_CMD_CLIENTINFO;
+		memset(&ecs->epkt.cmd, 0, sizeof ecs->epkt.cmd);
+		ecs->epkt.hdr.commandID = E_CMD_CLIENTINFO;
 		/* Clientinfo needs a record or EasyMP crashes */
-		ecs->ecmd.recordCount = 1;
-		ecs->ehdr.datasize = (sizeof(struct econ_command) +
+		ecs->epkt.cmd.recordCount = 1;
+		ecs->epkt.hdr.datasize = (sizeof(struct econ_command) +
 				      sizeof(struct econ_record));
-		ecs->ecmd.command.clientinfo.projState = ecs->state;
-		strncpy(ecs->ecmd.command.clientinfo.projName, ecs->name,
+		ecs->epkt.cmd.command.clientinfo.projState = ecs->state;
+		strncpy(ecs->epkt.cmd.command.clientinfo.projName, ecs->name,
 			ECON_PROJNAME_MAXLEN);
-		ecs->ecmd.command.clientinfo.useKeyword = 0;
-		ecs->ecmd.command.clientinfo.displayType = 0x07;
+		ecs->epkt.cmd.command.clientinfo.useKeyword = 0;
+		ecs->epkt.cmd.command.clientinfo.displayType = 0x07;
 
 		sendmsg(fd, &msg, 0);
 
 		struct e_cmd21 cmd21;
-		ecs->ehdr.commandID = 21;
-		ecs->ehdr.datasize = sizeof cmd21;
+		ecs->epkt.hdr.commandID = 21;
+		ecs->epkt.hdr.datasize = sizeof cmd21;
 		memset(&cmd21, 0, sizeof cmd21);
 		memcpy(&cmd21.projUniqInfo, ecs->proj_uniq, 6);
 		memcpy(cmd21.unknown_data1_20, cmd21_unknown_data1,
@@ -180,8 +178,8 @@ handle_input(struct ecs *ecs, char *in, int fd,
 		cmd21.height_1 = cmd21.height_2 = 768;
 
 		struct iovec iov[2];
-		iov[0].iov_base = &ecs->ehdr;
-		iov[0].iov_len = sizeof ecs->ehdr;
+		iov[0].iov_base = &ecs->epkt.hdr;
+		iov[0].iov_len = sizeof ecs->epkt.hdr;
 		iov[1].iov_base = &cmd21;
 		iov[1].iov_len = sizeof cmd21;
 		msg.msg_iov = iov;
@@ -191,13 +189,13 @@ handle_input(struct ecs *ecs, char *in, int fd,
 		break;
 	case E_CMD_REQCONNECT:
 		ecs->state = E_PSTAT_USING;
-		memset(&ecs->ecmd, 0, sizeof ecs->ecmd);
-		ecs->ehdr.commandID = E_CMD_CONNECTED;
-		ecs->ecmd.recordCount = 1;
-		ecs->ehdr.datasize = (sizeof(struct econ_command) +
+		memset(&ecs->epkt.cmd, 0, sizeof ecs->epkt.cmd);
+		ecs->epkt.hdr.commandID = E_CMD_CONNECTED;
+		ecs->epkt.cmd.recordCount = 1;
+		ecs->epkt.hdr.datasize = (sizeof(struct econ_command) +
 				      sizeof(struct econ_record));
-		ecs->ecmd.command.connected.projState = ecs->state;
-		strncpy(ecs->ecmd.command.connected.projName, ecs->name,
+		ecs->epkt.cmd.command.connected.projState = ecs->state;
+		strncpy(ecs->epkt.cmd.command.connected.projName, ecs->name,
 			ECON_PROJNAME_MAXLEN);
 		
 		struct econ_command *rcmd =
@@ -211,7 +209,7 @@ handle_input(struct ecs *ecs, char *in, int fd,
 #endif
 
 #if 0
-		ecs->ehdr.commandID = E_CMD_KEEPALIVE;
+		ecs->epkt.hdr.commandID = E_CMD_KEEPALIVE;
 #endif
 
 		if (addrlen > 0) {
@@ -243,8 +241,8 @@ handle_input(struct ecs *ecs, char *in, int fd,
 	case E_CMD_REQRESTART:
 		printf("request restart = stop?\n");
 		ecs->state = E_PSTAT_NOUSE;
-		ecs->ehdr.commandID = E_CMD_FINISHRESTART;
-		ecs->ehdr.datasize = 0;
+		ecs->epkt.hdr.commandID = E_CMD_FINISHRESTART;
+		ecs->epkt.hdr.datasize = 0;
 
 		msg.msg_iovlen = 1;
 		sendmsg(ecs->client_fd, &msg, 0);
@@ -281,7 +279,7 @@ recv_tcp(struct ecs *ecs)
 	}
 
 	printf("n tcp: %d\n", n);
-	set_ip(ecs->ehdr.IPaddress, sock_get_peer_ipv4_addr(ecs->client_fd));
+	set_ip(ecs->epkt.hdr.IPaddress, sock_get_peer_ipv4_addr(ecs->client_fd));
 
 	if (n > 0)
 		handle_input(ecs, in, ecs->client_fd, NULL, 0);
@@ -298,7 +296,7 @@ recv_udp(struct ecs *ecs)
 	n = recvfrom(ecs->udp_fd, in, BUFSIZ, 0,
 		     (struct sockaddr *) &src_addr, &addrlen);
 	printf("n udp: %d\n", n);
-	set_ip(ecs->ehdr.IPaddress,
+	set_ip(ecs->epkt.hdr.IPaddress,
 	       ((struct sockaddr_in *) &src_addr)->sin_addr.s_addr);
 
 	if (n > 0)
@@ -309,12 +307,12 @@ recv_udp(struct ecs *ecs)
 static void
 init_iov(struct ecs *ecs)
 {
-	ecs->iov[0].iov_base = &ecs->ehdr;
-	ecs->iov[0].iov_len = sizeof ecs->ehdr;
-	ecs->iov[1].iov_base = &ecs->ecmd;
-	ecs->iov[1].iov_len = sizeof ecs->ecmd;
-	ecs->iov[2].iov_base = &ecs->erec;
-	ecs->iov[2].iov_len = sizeof ecs->erec;
+	ecs->epkt.iov[0].iov_base = &ecs->epkt.hdr;
+	ecs->epkt.iov[0].iov_len = sizeof ecs->epkt.hdr;
+	ecs->epkt.iov[1].iov_base = &ecs->epkt.cmd;
+	ecs->epkt.iov[1].iov_len = sizeof ecs->epkt.cmd;
+	ecs->epkt.iov[2].iov_base = &ecs->epkt.rec;
+	ecs->epkt.iov[2].iov_len = sizeof ecs->epkt.rec;
 }
 
 int main(int argc, char *argv[])
@@ -335,7 +333,7 @@ int main(int argc, char *argv[])
 	ecs.client_fd =	ecs.client_fd_data[0] = ecs.client_fd_data[1] = -1;
 	ecs.state = E_PSTAT_NOUSE;
 	init_iov(&ecs);
-	init_header(&ecs.ehdr, E_CMD_CLIENTINFO);
+	init_header(&ecs.epkt.hdr, E_CMD_CLIENTINFO);
 
 	ecs.fd = bind_socket(SOCK_STREAM, host, control_port);
 	assert(ecs.fd >= 0);
@@ -350,8 +348,8 @@ int main(int argc, char *argv[])
 	ecs.tcp_fd = bind_socket(SOCK_DGRAM, host, control_port);
 	listen(ecs.tcp_fd, 1);
 
-	set_ip(ecs.erec.IPaddress, sock_get_ipv4_addr(ecs.fd));
-	memcpy(ecs.erec.projUniqInfo, ecs.proj_uniq, 6);
+	set_ip(ecs.epkt.rec.IPaddress, sock_get_ipv4_addr(ecs.fd));
+	memcpy(ecs.epkt.rec.projUniqInfo, ecs.proj_uniq, 6);
 	ecs.data_index = 0;
 
 	while (1) {
@@ -411,19 +409,19 @@ int main(int argc, char *argv[])
 			printf("got data con\n");
 
 			if (ecs.data_index == 2) {
-				memset(&ecs.ecmd, 0, sizeof ecs.ecmd);
-				ecs.ehdr.commandID = 22;
-				ecs.ehdr.datasize = sizeof ecs.ecmd;
-				ecs.ecmd.command.cmd22.unknown_field1 = 0x0000;
-				ecs.ecmd.command.cmd22.unknown_field2 = 0x0000;
-				ecs.ecmd.command.cmd22.width = 1024;
-				ecs.ecmd.command.cmd22.height = 768;
+				memset(&ecs.epkt.cmd, 0, sizeof ecs.epkt.cmd);
+				ecs.epkt.hdr.commandID = 22;
+				ecs.epkt.hdr.datasize = sizeof ecs.epkt.cmd;
+				ecs.epkt.cmd.command.cmd22.unknown_field1 = 0x0000;
+				ecs.epkt.cmd.command.cmd22.unknown_field2 = 0x0000;
+				ecs.epkt.cmd.command.cmd22.width = 1024;
+				ecs.epkt.cmd.command.cmd22.height = 768;
 
 				struct iovec iov[2];
-				iov[0].iov_base = &ecs.ehdr;
-				iov[0].iov_len = sizeof ecs.ehdr;
-				iov[1].iov_base = &ecs.ecmd;
-				iov[1].iov_len = sizeof ecs.ecmd;
+				iov[0].iov_base = &ecs.epkt.hdr;
+				iov[0].iov_len = sizeof ecs.epkt.hdr;
+				iov[1].iov_base = &ecs.epkt.cmd;
+				iov[1].iov_len = sizeof ecs.epkt.cmd;
 				writev(ecs.client_fd, iov, 2);
 			}
 		}
