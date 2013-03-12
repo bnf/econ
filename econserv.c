@@ -321,7 +321,7 @@ int main(int argc, char *argv[])
 	ecs.udp_fd = bind_socket(SOCK_DGRAM, host, control_port);
 	assert(ecs.udp_fd >= 0);
 
-	ecs.tcp_fd = bind_socket(SOCK_DGRAM, host, control_port);
+	ecs.tcp_fd = bind_socket(SOCK_STREAM, host, control_port);
 	listen(ecs.tcp_fd, 1);
 
 	set_ip(ecs.epkt.rec.IPaddress, sock_get_ipv4_addr(ecs.fd));
