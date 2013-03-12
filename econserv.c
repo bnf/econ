@@ -93,7 +93,6 @@ static uint8_t cmd21_unknown_data3[112] = {
 struct ecs {
 	int fd;
 	int udp_fd;
-	int tcp_fd;
 	int client_fd;
 	int client_fd_data[2];
 
@@ -321,9 +320,6 @@ int main(int argc, char *argv[])
 	ecs.udp_fd = bind_socket(SOCK_DGRAM, host, control_port);
 	assert(ecs.udp_fd >= 0);
 
-	ecs.tcp_fd = bind_socket(SOCK_STREAM, host, control_port);
-	listen(ecs.tcp_fd, 1);
-
 	set_ip(ecs.epkt.rec.IPaddress, sock_get_ipv4_addr(ecs.fd));
 	memcpy(ecs.epkt.rec.projUniqInfo, ecs.proj_uniq, 6);
 	ecs.data_index = 0;
@@ -336,8 +332,7 @@ int main(int argc, char *argv[])
 		FD_SET(ecs.fd, &fds);
 		FD_SET(ecs.data_fd, &fds);
 		FD_SET(ecs.udp_fd, &fds);
-		FD_SET(ecs.tcp_fd, &fds);
-		maxfd = MAX(maxfd, ecs.tcp_fd);
+		maxfd = MAX(maxfd, ecs.udp_fd);
 		if (ecs.client_fd >= 0) {
 			FD_SET(ecs.client_fd, &fds);
 			maxfd = MAX(maxfd, ecs.client_fd);
@@ -366,11 +361,6 @@ int main(int argc, char *argv[])
 		}
 		if (FD_ISSET(ecs.udp_fd, &fds)) {
 			recv_udp(&ecs);
-		}
-		if (FD_ISSET(ecs.tcp_fd, &fds)) {
-			if (ecs.client_fd > 0)
-				close(ecs.client_fd);
-			ecs.client_fd = accept(ecs.tcp_fd, NULL, NULL);
 		}
 
 		if (FD_ISSET(ecs.data_fd, &fds)) {
@@ -406,7 +396,6 @@ int main(int argc, char *argv[])
 	close(ecs.fd);
 	close(ecs.data_fd);
 	close(ecs.udp_fd);
-	close(ecs.tcp_fd);
 
 	return 0;
 }
