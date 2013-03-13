@@ -131,6 +131,9 @@ handle_input(struct ecs *ecs, char *in, int fd,
 	msg.msg_iov = ecs->epkt.iov;
 	msg.msg_iovlen = ARRAY_SIZE(ecs->epkt.iov);
 
+	fprintf(stderr, "handle_input: %d, udp: %s\n",
+		hdr->commandID, src_addr ? "yes" : "no");
+
 	switch (hdr->commandID) {
 	case E_CMD_EASYSEARCH:
 	case E_CMD_IPSEARCH:
