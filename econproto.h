@@ -83,6 +83,7 @@ enum _e_EmpCommand {
 	E_CMD_DISPLAYWAIT	=	15,
 	E_CMD_SENDKEY		=	16,
 
+	E_CMD_21		=	21,
 	E_CMD_22		=	22,
 	E_CMD_25		=	25
 };
