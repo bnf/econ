@@ -19,6 +19,8 @@
 #define _ECONPACKET_H_
 
 #include <stddef.h>
+#include <netinet/in.h>
+
 #include "econproto.h"
 
 struct econ_packet {
@@ -34,6 +36,9 @@ struct econ_packet {
 
 	/* Holding the previous elements */
 	struct iovec iov[4];
+
+	/* For packets that are received via udp. */
+	struct sockaddr_in addr;
 };
 
 void

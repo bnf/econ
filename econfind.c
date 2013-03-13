@@ -30,10 +30,12 @@
 static void
 parse_clientinfo(struct econ_packet *pkt)
 {
-	struct in_addr beamer;
-	
-	beamer.s_addr = *(uint32_t*)pkt->hdr.IPaddress;
-	printf("%s", inet_ntoa(beamer));
+	/* Clientinfo has our ip in the packet header,
+	 * and the record has the ip 16.0.32.0,
+	 * none of them are the acutal beamer ip,
+	 * so we retreive that from the up packet directly. */
+	printf("%s", inet_ntoa(pkt->addr.sin_addr));
+
 	if (pkt->hdr.datasize > 0) {
 		char *name = pkt->cmd.command.clientinfo.projName;
 		int state = pkt->cmd.command.clientinfo.projState;

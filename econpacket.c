@@ -81,9 +81,9 @@ epkt_send(int fd, struct econ_packet *pkt)
 }
 
 static int
-iov_max_read(struct iovec *iov, int *iovcnt, size_t size)
+iov_max_read(struct iovec *iov, size_t *iovcnt, size_t size)
 {
-	int i;
+	size_t i;
 
 	for (i = 0; i < *iovcnt; ++i) {
 		if (iov[i].iov_len > size) {
@@ -106,9 +106,11 @@ epkt_read(int fd, struct econ_packet *pkt)
 	union { ssize_t s; size_t u; } len, len2;
 	int type;
 	socklen_t length = sizeof(int);
-	int iovcnt;
+	struct msghdr msg;
 
+	memset(&msg, 0, sizeof msg);
 	init_iov(pkt);
+	msg.msg_iov = pkt->iov;
 	pkt->long_data_size = 0;
 
 	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) < 0)
@@ -117,16 +119,18 @@ epkt_read(int fd, struct econ_packet *pkt)
 	/* FIXME Do we get the diffs between udp and tcp handled a bit nicer? */
 	switch (type) {
 	case SOCK_STREAM:
-		iovcnt = 1;
+		msg.msg_iovlen = 1;
 		break;
 	case SOCK_DGRAM:
-		iovcnt = 4;
+		msg.msg_iovlen = 4;
+		msg.msg_name = &pkt->addr;
+		msg.msg_namelen = sizeof pkt->addr;
 		break;
 	default:
 		return -1;
 	}
 
-	len.s = readv(fd, pkt->iov, iovcnt);
+	len.s = recvmsg(fd, &msg, 0);
 	if (len.s < 0)
 		return -1;
 
@@ -148,12 +152,14 @@ epkt_read(int fd, struct econ_packet *pkt)
 		return -1;
 
 	if (type == SOCK_STREAM) {
-		iovcnt = 3;
-		if (iov_max_read(&pkt->iov[1], &iovcnt, pkt->hdr.datasize) < 0)
+		msg.msg_iovlen = 3;
+		msg.msg_iov = &pkt->iov[1];
+		if (iov_max_read(msg.msg_iov, &msg.msg_iovlen,
+				 pkt->hdr.datasize) < 0)
 			return -1;
 
 		/* Yes, this may write up to long_data[1024]. */
-		len2.s = readv(fd, &pkt->iov[1], iovcnt);
+		len2.s = recvmsg(fd, &msg, 0);
 		if (len2.s < 0 || len2.u != pkt->hdr.datasize)
 			return -1;
 
