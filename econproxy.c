@@ -161,6 +161,8 @@ ep_reqconnect(struct ep *ep)
 	ep->epkt.cmd.command.reqconnect.gateAddress[3] = 1;
 #endif
 
+	/* The first two seem to be ignored, 0x00, works as well as 0xff.
+	 * Windows client uses 0x02 and 0x01, so we do too. */
 	ep->epkt.cmd.command.reqconnect.unknown_field_1 = 0x02;
 	ep->epkt.cmd.command.reqconnect.unknown_field_2 = 0x01;
 	ep->epkt.cmd.command.reqconnect.unknown_field_3 = 0x03;
