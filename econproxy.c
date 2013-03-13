@@ -165,7 +165,8 @@ ep_reqconnect(struct ep *ep)
 	 * Windows client uses 0x02 and 0x01, so we do too. */
 	ep->epkt.cmd.command.reqconnect.unknown_field_1 = 0x02;
 	ep->epkt.cmd.command.reqconnect.unknown_field_2 = 0x01;
-	ep->epkt.cmd.command.reqconnect.unknown_field_3 = 0x03;
+
+	ep->epkt.cmd.command.reqconnect.version = 0x03;
 #if 0
 	memcpy(ep->epkt.cmd.command.reqconnect.EncPassword, "82091965",
 	       ECON_ENCRYPTION_MAXLEN);

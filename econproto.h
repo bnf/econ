@@ -161,7 +161,7 @@ typedef struct {
 	uint8_t	gateAddress[ECON_IPADDRESS_SIZE];
 	uint8_t unknown_field_1; /* value: 0x02 */
 	uint8_t unknown_field_2; /* value: 0x01 */
-	uint8_t unknown_field_3; /* value: 0x03 */
+	uint8_t version; /* value: 0x03 */
 	rfbServerInitMsg vnesInitMsg;
 } e_command_reqconnect;
 
