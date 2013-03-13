@@ -108,22 +108,14 @@ ep_get_clientinfo(struct ep *ep)
 	/* cache projUniqInfo needed for reqconnect */
 	memcpy(ep->projUniqInfo, ep->epkt.rec.projUniqInfo, ECON_UNIQINFO_LENGTH);
 
-#if 1
-	char buf[BUFSIZ];
-	ssize_t len = read(ep->ec_fd, buf, BUFSIZ);
-	struct econ_header *hdr = (void *) buf;
-	printf("cmd: %d, len: %zd\n", hdr->commandID, len);
-#if 0
 	if (epkt_read(ep->ec_fd, &ep->epkt) < 0)
-	    return -1;
-#endif
+		return -1;
 
-	if (hdr->commandID != 21) {
+	if (ep->epkt.hdr.commandID != 21) {
 		fprintf(stderr, "expected ex clientinfo (21), got: %d\n",
-			hdr->commandID);
+			ep->epkt.hdr.commandID);
 		return -1;
 	}
-#endif
 
 	return 0;
 }

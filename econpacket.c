@@ -16,6 +16,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <unistd.h>
@@ -33,6 +34,10 @@ init_iov(struct econ_packet *pkt)
 	pkt->iov[1].iov_len = sizeof pkt->cmd;
 	pkt->iov[2].iov_base = &pkt->rec;
 	pkt->iov[2].iov_len = sizeof pkt->rec;
+
+	/* To receive oversized commands */
+	pkt->iov[3].iov_base = pkt->long_data;
+	pkt->iov[3].iov_len = sizeof pkt->long_data;
 }
 
 static void
@@ -55,6 +60,9 @@ epkt_init(struct econ_packet *pkt, int cmd)
 	memset(&pkt->rec, 0, sizeof pkt->rec);
 	memset(&pkt->cmd, 0, sizeof pkt->cmd);
 	init_header(&pkt->hdr, cmd);
+
+	/* For irregular commands like 21 */
+	pkt->long_data_size = 0;
 }
 
 int
@@ -77,8 +85,9 @@ epkt_read(int fd, struct econ_packet *pkt)
 	union { ssize_t s; size_t u; } len;
 
 	init_iov(pkt);
+	pkt->long_data_size = 0;
 
-	len.s = readv(fd, pkt->iov, 3);
+	len.s = readv(fd, pkt->iov, 4);
 	if (len.s < 0)
 		return -1;
 
@@ -87,38 +96,59 @@ epkt_read(int fd, struct econ_packet *pkt)
 		return -1;
 	}
 
-	if (len.u < sizeof(struct econ_header) + pkt->hdr.datasize) {
+	if (pkt->hdr.datasize == 0) {
+		if (len.u > sizeof(struct econ_header))
+		    return -1;
+		return 0;
+	}
+
+	if (len.u != sizeof(struct econ_header) + pkt->hdr.datasize) {
 		fprintf(stderr, "packet has invalid datasize\n");
 		return -1;
 	}
 
-	if (pkt->hdr.datasize > 0) {
-		if (pkt->hdr.datasize < sizeof(struct econ_command)) {
-			fprintf(stderr,
-				"epkt_read: error: command to short\n");
+	if (pkt->hdr.datasize < sizeof(struct econ_command)) {
+		fprintf(stderr,
+			"epkt_read: error: command to short\n");
+		return -1;
+	}
+
+	/* Keepalive is an irregular command if datasize > 0:
+	 *  the regular field recordCount is 1,
+	 *  without actually having one. */
+	if (pkt->hdr.commandID == E_CMD_KEEPALIVE)
+		return 0;
+
+	/* Handle irregular long datasize */
+	if (pkt->hdr.datasize > (sizeof(struct econ_command) +
+				 sizeof(struct econ_record))) {
+		switch (pkt->hdr.commandID) {
+		case E_CMD_21:
+			break;
+		default:
+			fprintf(stderr, "epkt_read: received cmd: %d"
+				" with oversized datasize\n",
+				pkt->hdr.commandID);
+			exit(EXIT_FAILURE);
+		}
+		pkt->long_data_size = (pkt->hdr.datasize -
+				       (sizeof (struct econ_command) +
+					sizeof (struct econ_record)));
+		return 0;
+	}
+
+	if (pkt->cmd.recordCount > 0) {
+		if (pkt->cmd.recordCount > 1) {
+			fprintf(stderr, "epkt_read: did not expect a packet "
+				"with more than one record: %d, datasize: %d.\n",
+				pkt->cmd.recordCount, pkt->hdr.datasize);
 			return -1;
 		}
-
-		/* Keepalive is an irregular if datasize > 0:
-		 *  the regular field recordCount is 1,
-		 *  without actually having one. */
-		if (pkt->hdr.commandID == E_CMD_KEEPALIVE)
-			return 0;
-
-		if (pkt->cmd.recordCount > 0) {
-			if (pkt->cmd.recordCount > 1) {
-				fprintf(stderr, "epkt_read:"
-					" did not expect a packet with more"
-					" that one record: %d, datasize: %d.\n",
-					pkt->cmd.recordCount, pkt->hdr.datasize);
-				return -1;
-			}
-			if (pkt->hdr.datasize != (sizeof (struct econ_command) +
-						  sizeof (struct econ_record))) {
-				fprintf(stderr, "epkt_read: datasize incorrect, cmd: %d\n",
-					pkt->hdr.commandID);
-				return -1;
-			}
+		if (pkt->hdr.datasize != (sizeof (struct econ_command) +
+					  sizeof (struct econ_record))) {
+			fprintf(stderr, "epkt_read: datasize incorrect, cmd: %d\n",
+				pkt->hdr.commandID);
+			return -1;
 		}
 	}
 

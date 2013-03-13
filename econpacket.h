@@ -18,6 +18,7 @@
 #ifndef _ECONPACKET_H_
 #define _ECONPACKET_H_
 
+#include <stddef.h>
 #include "econproto.h"
 
 struct econ_packet {
@@ -26,7 +27,13 @@ struct econ_packet {
 	struct econ_record rec;
 
 	/* Holding the previous elements */
-	struct iovec iov[3];
+	struct iovec iov[4];
+
+	/* Storage for irregular long commands.
+	 * This is just the remaining part, the first
+	 * bytes are stored in cmd and rec. */
+	char long_data[1024];
+	size_t long_data_size;
 };
 
 void
