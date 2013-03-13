@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include <unistd.h>
+#include <sys/socket.h>
 #include <sys/uio.h>
 
 #include "econpacket.h"
@@ -79,15 +80,53 @@ epkt_send(int fd, struct econ_packet *pkt)
 	return writev(fd, pkt->iov, i);
 }
 
+static int
+iov_max_read(struct iovec *iov, int *iovcnt, size_t size)
+{
+	int i;
+
+	for (i = 0; i < *iovcnt; ++i) {
+		if (iov[i].iov_len > size) {
+			iov[i].iov_len = size;
+			*iovcnt = i+1;
+			return 0;
+		}
+		size -= iov[i].iov_len;
+	}
+
+	if (size > 0)
+		return -1;
+
+	return 0;
+}
+
 int
 epkt_read(int fd, struct econ_packet *pkt)
 {
-	union { ssize_t s; size_t u; } len;
+	union { ssize_t s; size_t u; } len, len2;
+	int type;
+	socklen_t length = sizeof(int);
+	int iovcnt;
 
 	init_iov(pkt);
 	pkt->long_data_size = 0;
 
-	len.s = readv(fd, pkt->iov, 4);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &length) < 0)
+		return -1;
+
+	/* FIXME Do we get the diffs between udp and tcp handled a bit nicer? */
+	switch (type) {
+	case SOCK_STREAM:
+		iovcnt = 1;
+		break;
+	case SOCK_DGRAM:
+		iovcnt = 4;
+		break;
+	default:
+		return -1;
+	}
+
+	len.s = readv(fd, pkt->iov, iovcnt);
 	if (len.s < 0)
 		return -1;
 
@@ -96,13 +135,30 @@ epkt_read(int fd, struct econ_packet *pkt)
 		return -1;
 	}
 
+	fprintf(stderr, "epkt_read: len.u: %zd, cmd: %d, datasize: %d\n",
+		len.u, pkt->hdr.commandID, pkt->hdr.datasize);
+
 	if (pkt->hdr.datasize == 0) {
 		if (len.u > sizeof(struct econ_header))
 		    return -1;
 		return 0;
 	}
-	fprintf(stderr, "epkt_read: len.u: %zd, cmd: %d, datasize: %d\n",
-		len.u, pkt->hdr.commandID, pkt->hdr.datasize);
+
+	if (pkt->hdr.datasize > 1024)
+		return -1;
+
+	if (type == SOCK_STREAM) {
+		iovcnt = 3;
+		if (iov_max_read(&pkt->iov[1], &iovcnt, pkt->hdr.datasize) < 0)
+			return -1;
+
+		/* Yes, this may write up to long_data[1024]. */
+		len2.s = readv(fd, &pkt->iov[1], iovcnt);
+		if (len2.s < 0 || len2.u != pkt->hdr.datasize)
+			return -1;
+
+		len.u += len2.u;
+	}
 
 	if (len.u != sizeof(struct econ_header) + pkt->hdr.datasize) {
 		fprintf(stderr, "packet has invalid datasize\n");
