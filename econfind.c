@@ -63,6 +63,8 @@ main(int argc, char *argv[])
 	sfd = bind_socket(SOCK_DGRAM, inet_ntoa(in), STR(ECON_PORTNUMBER));
 
 	epkt_init(&pkt, E_CMD_EASYSEARCH);
+	set_ip(pkt.hdr.IPaddress, sock_get_ipv4_addr(sfd));
+
 	if (epkt_send(cfd, &pkt) < 0)
 		exit(EXIT_FAILURE);
 
