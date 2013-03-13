@@ -72,6 +72,9 @@ main(int argc, char *argv[])
 	if (pkt.hdr.commandID == E_CMD_CLIENTINFO)
 		parse_clientinfo(&pkt);
 
+	if (epkt_read(sfd, &pkt) < 0)
+		exit(EXIT_FAILURE);
+
 	close(cfd);
 	close(sfd);
 
