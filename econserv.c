@@ -134,6 +134,12 @@ handle_input(struct ecs *ecs, char *in, int fd,
 	switch (hdr->commandID) {
 	case E_CMD_EASYSEARCH:
 	case E_CMD_IPSEARCH:
+#if 1
+		if (msg.msg_name) {
+			((struct sockaddr_in *) msg.msg_name)->sin_port =
+				htons(ECON_PORTNUMBER);
+		}
+#endif
 		memset(&ecs->epkt.cmd, 0, sizeof ecs->epkt.cmd);
 		ecs->epkt.hdr.commandID = E_CMD_CLIENTINFO;
 		/* Clientinfo needs a record or EasyMP crashes */
