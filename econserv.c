@@ -129,7 +129,7 @@ handle_input(struct ecs *ecs, char *in, int fd,
 	msg.msg_name = src_addr;
 	msg.msg_namelen = addrlen;
 	msg.msg_iov = ecs->epkt.iov;
-	msg.msg_iovlen = ARRAY_SIZE(ecs->epkt.iov);
+	msg.msg_iovlen = 3;
 
 	fprintf(stderr, "handle_input: %d, udp: %s\n",
 		hdr->commandID, src_addr ? "yes" : "no");
