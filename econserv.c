@@ -316,7 +316,7 @@ int main(int argc, char *argv[])
 	ecs.data_fd = bind_socket(SOCK_STREAM, host, video_port);
 	assert(ecs.data_fd >= 0);
 
-	ecs.udp_fd = bind_socket(SOCK_DGRAM, host, control_port);
+	ecs.udp_fd = bind_socket(SOCK_DGRAM, "0.0.0.0", control_port);
 	assert(ecs.udp_fd >= 0);
 
 	set_ip(ecs.epkt.rec.IPaddress, sock_get_ipv4_addr(ecs.fd));
