@@ -101,6 +101,8 @@ epkt_read(int fd, struct econ_packet *pkt)
 		    return -1;
 		return 0;
 	}
+	fprintf(stderr, "epkt_read: len.u: %zd, cmd: %d, datasize: %d\n",
+		len.u, pkt->hdr.commandID, pkt->hdr.datasize);
 
 	if (len.u != sizeof(struct econ_header) + pkt->hdr.datasize) {
 		fprintf(stderr, "packet has invalid datasize\n");
